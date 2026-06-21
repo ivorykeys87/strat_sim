@@ -45,13 +45,13 @@ export function createSimClient(): SimClient {
     if (!handlers) return;
 
     if (msg.type === "progress") {
-      (msg as SimProgressMsg).tick && handlers.onTick?.((msg as SimProgressMsg).tick);
+      handlers.onTick?.(msg.tick);
     } else if (msg.type === "done") {
       pending.delete(msg.id);
-      handlers.resolve((msg as SimDoneMsg).result);
+      handlers.resolve(msg.result);
     } else if (msg.type === "error") {
       pending.delete(msg.id);
-      handlers.reject(new Error((msg as SimErrorMsg).message));
+      handlers.reject(new Error(msg.message));
     }
   };
 
