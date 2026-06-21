@@ -8,10 +8,7 @@
  */
 
 import type {
-  SimDoneMsg,
-  SimErrorMsg,
   SimProgram,
-  SimProgressMsg,
   SimRequest,
   SimResponse,
   SimResult,
