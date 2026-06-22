@@ -234,8 +234,20 @@ export default function Home() {
             />
           </div>
 
-          {/* Run button — vertically aligned with inputs */}
-          <div className="flex items-end">
+          {/* Runs */}
+          <div>
+            <label className={labelClass}>Runs</label>
+            <input
+              type="number"
+              min={1}
+              className={inputClass + ' w-full'}
+              value={form.runs}
+              onChange={(e) => set('runs', Math.max(1, Number(e.target.value)))}
+            />
+          </div>
+
+          {/* Run button — spans remaining space, vertically aligned with inputs */}
+          <div className="flex items-end sm:col-span-2">
             <button
               onClick={handleRun}
               className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors"
