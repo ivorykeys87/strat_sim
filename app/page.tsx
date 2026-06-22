@@ -365,17 +365,17 @@ export default function Home() {
 
   // ── Per-spin table data (last 50 spins) ───────────────────────────────────
 
-  const spinTableData =
-    singleResult && committed.runs <= 1
-      ? singleResult.spins.slice(-50).map((s, i, arr) => ({
-          spinIndex: singleResult.spins.length - arr.length + i + 1,
-          label: s.pocket.label ?? String(s.pocket.number),
-          color: s.pocket.color,
-          totalStake: s.bets.reduce((acc, b) => acc + b.amount, 0),
-          netPnl: s.netPnl,
-          bankrollAfter: s.bankrollAfter,
-        }))
-      : [];
+  const spinTableData = singleResult
+    ? singleResult.spins.slice(-50).map((s, i, arr) => ({
+        spinIndex: singleResult.spins.length - arr.length + i + 1,
+        label: s.pocket.label ?? String(s.pocket.number),
+        color: s.pocket.color,
+        bets: s.bets as Bet[],
+        totalStake: s.bets.reduce((acc, b) => acc + b.amount, 0),
+        netPnl: s.netPnl,
+        bankrollAfter: s.bankrollAfter,
+      }))
+    : [];
 
   return (
     <main className="min-h-screen flex flex-col items-center gap-8 p-8">
