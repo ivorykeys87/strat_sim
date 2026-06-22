@@ -96,6 +96,18 @@ const ALL_BET_KINDS: [BetKind, string][] = [
   ['column1', '1st Column'],
   ['column2', '2nd Column'],
   ['column3', '3rd Column'],
+  ['street1', '1st Street (1–3)'],
+  ['street2', '2nd Street (4–6)'],
+  ['street3', '3rd Street (7–9)'],
+  ['street4', '4th Street (10–12)'],
+  ['street5', '5th Street (13–15)'],
+  ['street6', '6th Street (16–18)'],
+  ['street7', '7th Street (19–21)'],
+  ['street8', '8th Street (22–24)'],
+  ['street9', '9th Street (25–27)'],
+  ['street10', '10th Street (28–30)'],
+  ['street11', '11th Street (31–33)'],
+  ['street12', '12th Street (34–36)'],
   ['straight', 'Straight'],
 ];
 
