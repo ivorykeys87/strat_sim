@@ -1,17 +1,21 @@
-import type { BetKind } from '../bets';
+import type { ProgressionTarget } from '../bets';
+import { progressionBet, betMatchesTarget } from '../bets';
 import type { Strategy, StrategyContext } from '../strategy';
 
-type EvenMoneyTarget = 'red' | 'black' | 'even' | 'odd' | 'low' | 'high';
-
 export function dalembert(opts: {
-  target: EvenMoneyTarget;
+  target: ProgressionTarget;
   baseUnit?: number;
   unitStep?: number;
 }): Strategy {
   const { target } = opts;
 
+  const name =
+    typeof target === 'string'
+      ? `D'Alembert(${target})`
+      : `D'Alembert(straight:${target.number})`;
+
   return {
-    name: `D'Alembert(${target})`,
+    name,
 
     nextBets(ctx: StrategyContext) {
       const base = opts.baseUnit ?? ctx.baseUnit;
@@ -21,7 +25,7 @@ export function dalembert(opts: {
       // Replay all history to derive current stake
       let stake = base;
       for (const spin of history) {
-        const bet = spin.bets.find((b) => b.kind === (target as BetKind));
+        const bet = spin.bets.find((b) => betMatchesTarget(b, target));
         if (bet === undefined) continue;
         if (spin.netPnl < 0) {
           // Loss: increase stake by one unit step
@@ -37,7 +41,7 @@ export function dalembert(opts: {
         return [];
       }
 
-      return [{ kind: target as BetKind, amount: stake }];
+      return [progressionBet(target, stake)];
     },
   };
 }
