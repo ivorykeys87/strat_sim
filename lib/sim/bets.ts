@@ -23,6 +23,50 @@ export type Bet = {
 };
 
 /**
+ * A target for a progression strategy.  Non-straight targets are just the
+ * BetKind string; straight targets carry the pocket number so that multiple
+ * straight-bet progressions can coexist without cross-contaminating each other.
+ */
+export type ProgressionTarget =
+  | 'red'
+  | 'black'
+  | 'even'
+  | 'odd'
+  | 'low'
+  | 'high'
+  | 'dozen1'
+  | 'dozen2'
+  | 'dozen3'
+  | 'column1'
+  | 'column2'
+  | 'column3'
+  | { kind: 'straight'; number: number };
+
+/** Normalised kind string extracted from a ProgressionTarget. */
+export function progressionKind(target: ProgressionTarget): BetKind {
+  return typeof target === 'string' ? target : target.kind;
+}
+
+/** Build the Bet object for a progression target at a given amount. */
+export function progressionBet(target: ProgressionTarget, amount: number): Bet {
+  if (typeof target === 'string') {
+    return { kind: target, amount };
+  }
+  return { kind: 'straight', amount, number: target.number };
+}
+
+/**
+ * Returns true when a historical Bet matches the given ProgressionTarget.
+ * Used to avoid cross-contaminating multiple parallel progressions.
+ */
+export function betMatchesTarget(bet: Bet, target: ProgressionTarget): boolean {
+  if (typeof target === 'string') {
+    return bet.kind === target;
+  }
+  return bet.kind === 'straight' && bet.number === target.number;
+}
+
+/**
  * Returns the *profit* multiplier on a winning bet.
  * (A win pays back stake × multiplier as profit, plus the original stake.)
  */
