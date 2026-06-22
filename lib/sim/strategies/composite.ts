@@ -15,8 +15,15 @@ export function composite(strategies: Strategy[]): Strategy {
     name,
 
     nextBets(ctx: StrategyContext) {
-      const allBets = strategies.flatMap((s) => s.nextBets(ctx));
-      return allBets;
+      const results = strategies.map((s) => s.nextBets(ctx));
+
+      // All strategies signalled stop — propagate the stop signal
+      if (results.every((r) => r.length === 0)) {
+        return [];
+      }
+
+      // Concatenate bets from strategies that could cover their stakes
+      return results.flat();
     },
   };
 }
