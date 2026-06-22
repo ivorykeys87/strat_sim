@@ -199,3 +199,114 @@ describe('dalembert – nextBets stake progression', () => {
     expect(bets).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Dozen target
+// ---------------------------------------------------------------------------
+
+describe('dalembert – dozen1 target', () => {
+  const strat = dalembert({ target: 'dozen1', baseUnit: 5 });
+
+  it('first bet is kind=dozen1, amount=5', () => {
+    const bets = strat.nextBets(makeCtx([]));
+    expect(bets).toHaveLength(1);
+    expect(bets[0].kind).toBe('dozen1');
+    expect(bets[0].amount).toBe(5);
+  });
+
+  it('increases stake by one step after a dozen1 loss', () => {
+    const history = [makeLoss('dozen1', 5)];
+    const bets = strat.nextBets(makeCtx(history));
+    expect(bets[0].amount).toBe(10);
+  });
+
+  it('dozen1 progression independent of concurrent red bet', () => {
+    const mixedLoss: SpinResult = {
+      pocket: { number: 0, color: 'green' } as Pocket,
+      bets: [
+        { kind: 'red', amount: 5 },
+        { kind: 'dozen1', amount: 5 },
+      ],
+      netPnl: -10,
+      bankrollAfter: 990,
+    };
+    const bets = strat.nextBets(makeCtx([mixedLoss]));
+    expect(bets[0].kind).toBe('dozen1');
+    // 1 dozen1 loss → stake = 5 + 5 = 10
+    expect(bets[0].amount).toBe(10);
+  });
+
+  it('payout on dozen win is 2×stake (simulate check)', () => {
+    const r = simulate({
+      strategy: dalembert({ target: 'dozen1', baseUnit: 5 }),
+      wheelType: 'european',
+      startingBankroll: 1000,
+      baseUnit: 5,
+      maxSpins: 200,
+      seed: 42,
+    });
+    const wins = r.spins.filter((s) => s.bets.length === 1 && s.netPnl > 0);
+    expect(wins.length).toBeGreaterThan(0);
+    for (const w of wins) {
+      expect(w.netPnl).toBe(w.bets[0].amount * 2);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Straight target
+// ---------------------------------------------------------------------------
+
+describe('dalembert – straight target (number 17)', () => {
+  const strat = dalembert({ target: { kind: 'straight', number: 17 }, baseUnit: 5 });
+
+  it('first bet is kind=straight, number=17, amount=5', () => {
+    const bets = strat.nextBets(makeCtx([]));
+    expect(bets).toHaveLength(1);
+    expect(bets[0].kind).toBe('straight');
+    expect(bets[0].number).toBe(17);
+    expect(bets[0].amount).toBe(5);
+  });
+
+  it('increases stake after a loss on straight:17', () => {
+    const history = [
+      {
+        pocket: { number: 0, color: 'green' } as Pocket,
+        bets: [{ kind: 'straight' as const, amount: 5, number: 17 }],
+        netPnl: -5,
+        bankrollAfter: 995,
+      },
+    ];
+    const bets = strat.nextBets(makeCtx(history));
+    expect(bets[0].amount).toBe(10);
+    expect(bets[0].number).toBe(17);
+  });
+
+  it('straight:17 does NOT interfere with straight:5 history', () => {
+    const lossOn5: SpinResult = {
+      pocket: { number: 0, color: 'green' } as Pocket,
+      bets: [{ kind: 'straight', amount: 5, number: 5 }],
+      netPnl: -5,
+      bankrollAfter: 995,
+    };
+    // No matching bet for straight:17 in history → stays at base
+    const bets = strat.nextBets(makeCtx([lossOn5]));
+    expect(bets[0].amount).toBe(5);
+    expect(bets[0].number).toBe(17);
+  });
+
+  it('payout on straight win is 35×stake', () => {
+    const r = simulate({
+      strategy: dalembert({ target: { kind: 'straight', number: 7 }, baseUnit: 1 }),
+      wheelType: 'european',
+      startingBankroll: 5000,
+      baseUnit: 1,
+      maxSpins: 500,
+      seed: 99,
+    });
+    const wins = r.spins.filter((s) => s.netPnl > 0);
+    for (const w of wins) {
+      expect(w.netPnl).toBe(w.bets[0].amount * 35);
+    }
+  });
+});
