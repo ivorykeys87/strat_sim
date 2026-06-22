@@ -10,8 +10,8 @@ import {
   CartesianGrid,
   ResponsiveContainer,
 } from 'recharts';
-import { simulate, martingale, fibonacci, dalembert } from '@/lib/sim';
-import type { SimulateResult, WheelType } from '@/lib/sim';
+import { simulate, monteCarlo, martingale, fibonacci, dalembert } from '@/lib/sim';
+import type { SimulateResult, MonteCarloResult, WheelType } from '@/lib/sim';
 
 type StrategyName = 'martingale' | 'fibonacci' | 'dalembert';
 type EvenMoneyTarget = 'red' | 'black' | 'even' | 'odd' | 'low' | 'high';
@@ -24,6 +24,7 @@ interface FormState {
   baseUnit: number;
   maxSpins: number;
   seed: number;
+  runs: number;
 }
 
 const DEFAULT_FORM: FormState = {
@@ -34,6 +35,7 @@ const DEFAULT_FORM: FormState = {
   baseUnit: 5,
   maxSpins: 200,
   seed: 42,
+  runs: 1,
 };
 
 function buildStrategy(form: FormState) {
@@ -77,33 +79,58 @@ const labelClass = 'block text-xs uppercase tracking-widest text-gray-400 mb-1';
 
 export default function Home() {
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
-  const [result, setResult] = useState<SimulateResult>(() => runSim(DEFAULT_FORM));
+  const [singleResult, setSingleResult] = useState<SimulateResult | null>(
+    () => runSim(DEFAULT_FORM),
+  );
+  const [aggregate, setAggregate] = useState<MonteCarloResult | null>(null);
   const [committed, setCommitted] = useState<FormState>(DEFAULT_FORM);
 
   const handleRun = useCallback(() => {
-    setResult(runSim(form));
-    setCommitted(form);
+    const runs = Math.max(1, form.runs);
+    if (runs <= 1) {
+      setSingleResult(runSim(form));
+      setAggregate(null);
+    } else {
+      const mc = monteCarlo({
+        strategy: buildStrategy(form),
+        wheelType: form.wheelType,
+        startingBankroll: form.startingBankroll,
+        baseUnit: form.baseUnit,
+        maxSpins: form.maxSpins,
+        seed: form.seed,
+        runs,
+      });
+      setAggregate(mc);
+      setSingleResult(null);
+    }
+    setCommitted({ ...form, runs });
   }, [form]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  const chartData = result.spins.map((s, i) => ({
-    spin: i + 1,
-    bankroll: s.bankrollAfter,
-  }));
+  const chartData =
+    singleResult
+      ? singleResult.spins.map((s, i) => ({ spin: i + 1, bankroll: s.bankrollAfter }))
+      : [];
 
-  const summaryLine = [
-    STRATEGY_LABELS[committed.strategy],
-    'on',
-    committed.target,
-    '·',
-    WHEEL_LABELS[committed.wheelType],
-    'wheel · seed',
-    committed.seed,
-    '·',
-    `$${committed.startingBankroll.toLocaleString()} starting bankroll`,
-  ].join(' ');
+  const summaryLine = (() => {
+    const base = [
+      STRATEGY_LABELS[committed.strategy],
+      'on',
+      committed.target,
+      '·',
+      WHEEL_LABELS[committed.wheelType],
+      'wheel · seed',
+      committed.seed,
+      '·',
+      `${committed.startingBankroll.toLocaleString()} starting bankroll`,
+    ].join(' ');
+    if (committed.runs > 1) {
+      return `${base} · ${committed.runs} runs (seeds ${committed.seed}–${committed.seed + committed.runs - 1})`;
+    }
+    return base;
+  })();
 
   return (
     <main className="min-h-screen flex flex-col items-center gap-8 p-8">
@@ -207,8 +234,20 @@ export default function Home() {
             />
           </div>
 
-          {/* Run button — vertically aligned with inputs */}
-          <div className="flex items-end">
+          {/* Runs */}
+          <div>
+            <label className={labelClass}>Runs</label>
+            <input
+              type="number"
+              min={1}
+              className={inputClass + ' w-full'}
+              value={form.runs}
+              onChange={(e) => set('runs', Math.max(1, Number(e.target.value)))}
+            />
+          </div>
+
+          {/* Run button — spans remaining space, vertically aligned with inputs */}
+          <div className="flex items-end sm:col-span-2">
             <button
               onClick={handleRun}
               className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors"
@@ -220,49 +259,65 @@ export default function Home() {
       </section>
 
       {/* ── Summary stats ── */}
-      <section className="w-full max-w-3xl grid grid-cols-2 gap-4 sm:grid-cols-5">
-        <StatCard label="Final Bankroll" value={`$${result.finalBankroll.toFixed(2)}`} />
-        <StatCard label="Peak Bankroll" value={`$${result.peakBankroll.toFixed(2)}`} />
-        <StatCard label="Max Drawdown" value={`$${result.maxDrawdown.toFixed(2)}`} />
-        <StatCard label="Spins Played" value={String(result.spins.length)} />
-        <StatCard label="Ruined" value={result.ruined ? 'Yes' : 'No'} highlight={result.ruined} />
-      </section>
+      {committed.runs <= 1 && singleResult !== null ? (
+        <section className="w-full max-w-3xl grid grid-cols-2 gap-4 sm:grid-cols-5">
+          <StatCard label="Final Bankroll" value={`${singleResult.finalBankroll.toFixed(2)}`} />
+          <StatCard label="Peak Bankroll" value={`${singleResult.peakBankroll.toFixed(2)}`} />
+          <StatCard label="Max Drawdown" value={`${singleResult.maxDrawdown.toFixed(2)}`} />
+          <StatCard label="Spins Played" value={String(singleResult.spins.length)} />
+          <StatCard label="Ruined" value={singleResult.ruined ? 'Yes' : 'No'} highlight={singleResult.ruined} />
+        </section>
+      ) : aggregate !== null ? (
+        <section className="w-full max-w-3xl grid grid-cols-2 gap-4 sm:grid-cols-5">
+          <StatCard label="Runs" value={String(aggregate.runs)} />
+          <StatCard
+            label="Ruin Rate"
+            value={`${(aggregate.ruinRate * 100).toFixed(1)}%`}
+            highlight={aggregate.ruinRate > 0.5}
+          />
+          <StatCard label="Median Final Bankroll" value={`${aggregate.median.toFixed(2)}`} />
+          <StatCard label="Mean Final Bankroll" value={`${aggregate.mean.toFixed(2)}`} />
+          <StatCard label="Worst Drawdown" value={`${aggregate.worstDrawdown.toFixed(2)}`} />
+        </section>
+      ) : null}
 
-      {/* ── Bankroll chart ── */}
-      <section className="w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-800 px-4 py-5">
-        <p className="text-xs uppercase tracking-widest text-gray-400 mb-4">
-          Bankroll over time
-        </p>
-        <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis
-              dataKey="spin"
-              tick={{ fill: '#9ca3af', fontSize: 11 }}
-              label={{ value: 'Spin', position: 'insideBottomRight', offset: -4, fill: '#6b7280', fontSize: 11 }}
-            />
-            <YAxis
-              tick={{ fill: '#9ca3af', fontSize: 11 }}
-              tickFormatter={(v: number) => `$${v}`}
-            />
-            <Tooltip
-              contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }}
-              labelStyle={{ color: '#d1d5db' }}
-              itemStyle={{ color: '#a5b4fc' }}
-              formatter={(v: number) => [`$${v.toFixed(2)}`, 'Bankroll']}
-              labelFormatter={(label: number) => `Spin ${label}`}
-            />
-            <Line
-              type="monotone"
-              dataKey="bankroll"
-              stroke="#6366f1"
-              strokeWidth={2}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </section>
+      {/* ── Bankroll chart (single-run only) ── */}
+      {committed.runs <= 1 && singleResult !== null && (
+        <section className="w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-800 px-4 py-5">
+          <p className="text-xs uppercase tracking-widest text-gray-400 mb-4">
+            Bankroll over time
+          </p>
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis
+                dataKey="spin"
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                label={{ value: 'Spin', position: 'insideBottomRight', offset: -4, fill: '#6b7280', fontSize: 11 }}
+              />
+              <YAxis
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tickFormatter={(v: number) => `${v}`}
+              />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }}
+                labelStyle={{ color: '#d1d5db' }}
+                itemStyle={{ color: '#a5b4fc' }}
+                formatter={(v: number) => [`${v.toFixed(2)}`, 'Bankroll']}
+                labelFormatter={(label: number) => `Spin ${label}`}
+              />
+              <Line
+                type="monotone"
+                dataKey="bankroll"
+                stroke="#6366f1"
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </section>
+      )}
     </main>
   );
 }
