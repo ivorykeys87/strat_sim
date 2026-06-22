@@ -10,8 +10,8 @@ import {
   CartesianGrid,
   ResponsiveContainer,
 } from 'recharts';
-import { simulate, martingale, fibonacci, dalembert } from '@/lib/sim';
-import type { SimulateResult, WheelType } from '@/lib/sim';
+import { simulate, monteCarlo, martingale, fibonacci, dalembert } from '@/lib/sim';
+import type { SimulateResult, MonteCarloResult, WheelType } from '@/lib/sim';
 
 type StrategyName = 'martingale' | 'fibonacci' | 'dalembert';
 type EvenMoneyTarget = 'red' | 'black' | 'even' | 'odd' | 'low' | 'high';
