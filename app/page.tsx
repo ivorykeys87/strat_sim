@@ -24,6 +24,7 @@ interface FormState {
   baseUnit: number;
   maxSpins: number;
   seed: number;
+  runs: number;
 }
 
 const DEFAULT_FORM: FormState = {
