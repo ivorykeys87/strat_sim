@@ -79,33 +79,58 @@ const labelClass = 'block text-xs uppercase tracking-widest text-gray-400 mb-1';
 
 export default function Home() {
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
-  const [result, setResult] = useState<SimulateResult>(() => runSim(DEFAULT_FORM));
+  const [singleResult, setSingleResult] = useState<SimulateResult | null>(
+    () => runSim(DEFAULT_FORM),
+  );
+  const [aggregate, setAggregate] = useState<MonteCarloResult | null>(null);
   const [committed, setCommitted] = useState<FormState>(DEFAULT_FORM);
 
   const handleRun = useCallback(() => {
-    setResult(runSim(form));
-    setCommitted(form);
+    const runs = Math.max(1, form.runs);
+    if (runs <= 1) {
+      setSingleResult(runSim(form));
+      setAggregate(null);
+    } else {
+      const mc = monteCarlo({
+        strategy: buildStrategy(form),
+        wheelType: form.wheelType,
+        startingBankroll: form.startingBankroll,
+        baseUnit: form.baseUnit,
+        maxSpins: form.maxSpins,
+        seed: form.seed,
+        runs,
+      });
+      setAggregate(mc);
+      setSingleResult(null);
+    }
+    setCommitted({ ...form, runs });
   }, [form]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  const chartData = result.spins.map((s, i) => ({
-    spin: i + 1,
-    bankroll: s.bankrollAfter,
-  }));
+  const chartData =
+    singleResult
+      ? singleResult.spins.map((s, i) => ({ spin: i + 1, bankroll: s.bankrollAfter }))
+      : [];
 
-  const summaryLine = [
-    STRATEGY_LABELS[committed.strategy],
-    'on',
-    committed.target,
-    '·',
-    WHEEL_LABELS[committed.wheelType],
-    'wheel · seed',
-    committed.seed,
-    '·',
-    `$${committed.startingBankroll.toLocaleString()} starting bankroll`,
-  ].join(' ');
+  const summaryLine = (() => {
+    const base = [
+      STRATEGY_LABELS[committed.strategy],
+      'on',
+      committed.target,
+      '·',
+      WHEEL_LABELS[committed.wheelType],
+      'wheel · seed',
+      committed.seed,
+      '·',
+      `${committed.startingBankroll.toLocaleString()} starting bankroll`,
+    ].join(' ');
+    if (committed.runs > 1) {
+      return `${base} · ${committed.runs} runs (seeds ${committed.seed}–${committed.seed + committed.runs - 1})`;
+    }
+    return base;
+  })();
 
   return (
     <main className="min-h-screen flex flex-col items-center gap-8 p-8">
