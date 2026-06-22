@@ -345,7 +345,19 @@ function execStatement(node: BlockNode, ctx: EvalCtx): void {
           : Number(node.fields?.['NUMBER'] ?? 0);
         bet.number = num;
       }
+      if (ctx.currentBlockId !== undefined) {
+        bet.blockId = ctx.currentBlockId;
+      }
       ctx.bets.push(bet);
+      break;
+    }
+
+    case 'bet_block': {
+      const name = (node.fields?.['NAME'] as string | undefined) ?? 'main';
+      const prev = ctx.currentBlockId;
+      ctx.currentBlockId = name;
+      execStatements(node.inputs?.['BETS']?.block, ctx);
+      ctx.currentBlockId = prev;
       break;
     }
 
