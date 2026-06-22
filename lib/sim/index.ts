@@ -7,3 +7,5 @@ export type { SpinResult, StrategyContext, Strategy } from './strategy';
 export { simulate } from './simulate';
 export type { SimulateOptions, SimulateResult } from './simulate';
 export { martingale } from './strategies/martingale';
+export { fibonacci } from './strategies/fibonacci';
+export { dalembert } from './strategies/dalembert';
