@@ -1,7 +1,6 @@
-import type { BetKind } from '../bets';
+import type { ProgressionTarget } from '../bets';
+import { progressionBet, betMatchesTarget } from '../bets';
 import type { Strategy, StrategyContext } from '../strategy';
-
-type EvenMoneyTarget = 'red' | 'black' | 'even' | 'odd' | 'low' | 'high';
 
 // Precomputed Fibonacci sequence — index 0 and 1 are both 1 so index maps
 // directly to the sequence: fib[0]=1, fib[1]=1, fib[2]=2, fib[3]=3, ...
@@ -21,13 +20,18 @@ function fibAt(index: number): number {
 }
 
 export function fibonacci(opts: {
-  target: EvenMoneyTarget;
+  target: ProgressionTarget;
   baseUnit?: number;
 }): Strategy {
   const { target } = opts;
 
+  const name =
+    typeof target === 'string'
+      ? `Fibonacci(${target})`
+      : `Fibonacci(straight:${target.number})`;
+
   return {
-    name: `Fibonacci(${target})`,
+    name,
 
     nextBets(ctx: StrategyContext) {
       const base = opts.baseUnit ?? ctx.baseUnit;
@@ -36,7 +40,7 @@ export function fibonacci(opts: {
       // Replay all history to derive current Fibonacci index
       let index = 0;
       for (const spin of history) {
-        const bet = spin.bets.find((b) => b.kind === (target as BetKind));
+        const bet = spin.bets.find((b) => betMatchesTarget(b, target));
         if (bet === undefined) continue;
         if (spin.netPnl < 0) {
           // Loss: advance one step
@@ -54,7 +58,7 @@ export function fibonacci(opts: {
         return [];
       }
 
-      return [{ kind: target as BetKind, amount: stake }];
+      return [progressionBet(target, stake)];
     },
   };
 }

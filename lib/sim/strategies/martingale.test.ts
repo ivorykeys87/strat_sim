@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { simulate } from '../simulate';
-import { dalembert } from './dalembert';
+import { martingale } from './martingale';
 import type { StrategyContext, SpinResult } from '../strategy';
 import type { Pocket } from '../wheel';
 
@@ -8,19 +8,19 @@ import type { Pocket } from '../wheel';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeLoss(target: string, amount: number): SpinResult {
+function makeLoss(kind: string, amount: number, number?: number): SpinResult {
   return {
     pocket: { number: 0, color: 'green' } as Pocket,
-    bets: [{ kind: target as never, amount }],
+    bets: [{ kind: kind as never, amount, ...(number !== undefined ? { number } : {}) }],
     netPnl: -amount,
     bankrollAfter: 1000,
   };
 }
 
-function makeWin(target: string, amount: number): SpinResult {
+function makeWin(kind: string, amount: number, number?: number): SpinResult {
   return {
     pocket: { number: 1, color: 'red' } as Pocket,
-    bets: [{ kind: target as never, amount }],
+    bets: [{ kind: kind as never, amount, ...(number !== undefined ? { number } : {}) }],
     netPnl: amount,
     bankrollAfter: 1000,
   };
@@ -31,11 +31,11 @@ function makeCtx(history: SpinResult[], bankroll = 10_000): StrategyContext {
 }
 
 // ---------------------------------------------------------------------------
-// Shared simulate options
+// Shared simulate options (even-money red target)
 // ---------------------------------------------------------------------------
 
 const BASE_OPTS = {
-  strategy: dalembert({ target: 'red', baseUnit: 5 }),
+  strategy: martingale({ target: 'red', baseUnit: 5 }),
   wheelType: 'european' as const,
   startingBankroll: 1000,
   baseUnit: 5,
@@ -47,10 +47,10 @@ const BASE_OPTS = {
 // Determinism
 // ---------------------------------------------------------------------------
 
-describe('dalembert – determinism', () => {
+describe('martingale – determinism', () => {
   it('same seed produces identical results on two runs', () => {
-    const r1 = simulate({ ...BASE_OPTS, strategy: dalembert({ target: 'red', baseUnit: 5 }) });
-    const r2 = simulate({ ...BASE_OPTS, strategy: dalembert({ target: 'red', baseUnit: 5 }) });
+    const r1 = simulate({ ...BASE_OPTS, strategy: martingale({ target: 'red', baseUnit: 5 }) });
+    const r2 = simulate({ ...BASE_OPTS, strategy: martingale({ target: 'red', baseUnit: 5 }) });
 
     expect(r1.finalBankroll).toBe(r2.finalBankroll);
     expect(r1.spins.length).toBe(r2.spins.length);
@@ -64,24 +64,29 @@ describe('dalembert – determinism', () => {
 // Bankroll invariants
 // ---------------------------------------------------------------------------
 
-describe('dalembert – bankroll invariants', () => {
-  it('bankrollAfter never goes negative across all spins', () => {
+describe('martingale – bankroll invariants', () => {
+  it('bankrollAfter never goes negative', () => {
     const r = simulate(BASE_OPTS);
     for (const spin of r.spins) {
       expect(spin.bankrollAfter).toBeGreaterThanOrEqual(0);
     }
     expect(r.finalBankroll).toBeGreaterThanOrEqual(0);
   });
+
+  it('peakBankroll >= startingBankroll', () => {
+    const r = simulate(BASE_OPTS);
+    expect(r.peakBankroll).toBeGreaterThanOrEqual(BASE_OPTS.startingBankroll);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Early stop when bankroll is too small
+// Early stop
 // ---------------------------------------------------------------------------
 
-describe('dalembert – stops when bankroll is exhausted', () => {
+describe('martingale – stops when bankroll is exhausted', () => {
   it('spins.length < maxSpins with tiny starting bankroll', () => {
     const r = simulate({
-      strategy: dalembert({ target: 'red', baseUnit: 5 }),
+      strategy: martingale({ target: 'red', baseUnit: 5 }),
       wheelType: 'european',
       startingBankroll: 5,
       baseUnit: 5,
@@ -90,122 +95,60 @@ describe('dalembert – stops when bankroll is exhausted', () => {
     });
     expect(r.spins.length).toBeLessThan(500);
   });
-
-  it('finalBankroll >= 0 when ruined', () => {
-    const seeds = [1, 2, 3, 4, 5, 10, 20, 99, 100];
-    let ruinedOnce = false;
-    for (const seed of seeds) {
-      const r = simulate({
-        strategy: dalembert({ target: 'black', baseUnit: 5 }),
-        wheelType: 'european',
-        startingBankroll: 5,
-        baseUnit: 5,
-        maxSpins: 100,
-        seed,
-      });
-      expect(r.finalBankroll).toBeGreaterThanOrEqual(0);
-      if (r.ruined) ruinedOnce = true;
-    }
-    expect(ruinedOnce).toBe(true);
-  });
 });
 
 // ---------------------------------------------------------------------------
-// D'Alembert-specific: stake progression via nextBets unit tests
+// Even-money target (red): stake progression
 // ---------------------------------------------------------------------------
 
-describe('dalembert – nextBets stake progression', () => {
-  const strat = dalembert({ target: 'red', baseUnit: 5 });
+describe('martingale – even-money (red) stake progression', () => {
+  const strat = martingale({ target: 'red', baseUnit: 5 });
 
   it('starts at base (5) with no history', () => {
     const bets = strat.nextBets(makeCtx([]));
     expect(bets).toHaveLength(1);
+    expect(bets[0].kind).toBe('red');
     expect(bets[0].amount).toBe(5);
   });
 
-  it('after 1 loss → stake = base + 1×unitStep = 10', () => {
+  it('doubles after a loss', () => {
     const history = [makeLoss('red', 5)];
     const bets = strat.nextBets(makeCtx(history));
     expect(bets[0].amount).toBe(10);
   });
 
-  it('after 2 losses → stake = base + 2×unitStep = 15', () => {
+  it('doubles twice after two losses', () => {
     const history = [makeLoss('red', 5), makeLoss('red', 10)];
     const bets = strat.nextBets(makeCtx(history));
-    expect(bets[0].amount).toBe(15);
+    expect(bets[0].amount).toBe(20);
   });
 
-  it('after N losses → stake = base + N×unitStep', () => {
-    const losses: SpinResult[] = [];
-    let currentStake = 5;
-    for (let n = 1; n <= 5; n++) {
-      losses.push(makeLoss('red', currentStake));
-      currentStake += 5;
-      const bets = strat.nextBets(makeCtx([...losses]));
-      expect(bets[0].amount).toBe(5 + n * 5);
-    }
-  });
-
-  it('after a win, stake decreases by unitStep', () => {
-    // L, L → stake=15; then Win → stake=10
-    const history = [makeLoss('red', 5), makeLoss('red', 10), makeWin('red', 15)];
-    const bets = strat.nextBets(makeCtx(history));
-    expect(bets[0].amount).toBe(10);
-  });
-
-  it('stake never goes below base, even after many wins', () => {
-    const history = [
-      makeWin('red', 5),
-      makeWin('red', 5),
-      makeWin('red', 5),
-      makeWin('red', 5),
-    ];
-    const bets = strat.nextBets(makeCtx(history));
-    expect(bets[0].amount).toBe(5); // clamped at base
-  });
-
-  it('stake never goes below base after win from base level', () => {
-    // Starting at base, a win should keep us at base
-    const history = [makeWin('red', 5)];
+  it('resets to base after a win', () => {
+    const history = [makeLoss('red', 5), makeLoss('red', 10), makeWin('red', 20)];
     const bets = strat.nextBets(makeCtx(history));
     expect(bets[0].amount).toBe(5);
   });
 
-  it('custom unitStep works correctly', () => {
-    const customStrat = dalembert({ target: 'red', baseUnit: 10, unitStep: 2 });
-    const history = [makeLoss('red', 10), makeLoss('red', 12)];
-    const bets = customStrat.nextBets(makeCtx(history));
-    expect(bets[0].amount).toBe(14); // 10 + 2 + 2
-  });
-
-  it('custom unitStep: win reduces by unitStep, not base', () => {
-    const customStrat = dalembert({ target: 'red', baseUnit: 10, unitStep: 2 });
-    // L → 12, L → 14, W → 12
-    const history = [
-      makeLoss('red', 10),
-      makeLoss('red', 12),
-      makeWin('red', 14),
-    ];
-    const bets = customStrat.nextBets(makeCtx(history));
-    expect(bets[0].amount).toBe(12);
-  });
-
   it('returns [] when stake > bankroll', () => {
-    // 10 losses from base=5, step=5 → stake = 5 + 10×5 = 55
-    const history = Array.from({ length: 10 }, (_, i) =>
-      makeLoss('red', 5 + i * 5),
-    );
-    const bets = strat.nextBets(makeCtx(history, 1)); // bankroll=1, stake=55
+    // 5 consecutive losses → next stake = 5×2^5 = 160
+    const history = [
+      makeLoss('red', 5),
+      makeLoss('red', 10),
+      makeLoss('red', 20),
+      makeLoss('red', 40),
+      makeLoss('red', 80),
+    ];
+    const bets = strat.nextBets(makeCtx(history, 100)); // bankroll < 160
     expect(bets).toHaveLength(0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Dozen target
+// Dozen target: stake progression and payout
 // ---------------------------------------------------------------------------
 
-describe('dalembert – dozen1 target', () => {
-  const strat = dalembert({ target: 'dozen1', baseUnit: 5 });
+describe('martingale – dozen1 target', () => {
+  const strat = martingale({ target: 'dozen1', baseUnit: 5 });
 
   it('first bet is kind=dozen1, amount=5', () => {
     const bets = strat.nextBets(makeCtx([]));
@@ -214,13 +157,20 @@ describe('dalembert – dozen1 target', () => {
     expect(bets[0].amount).toBe(5);
   });
 
-  it('increases stake by one step after a dozen1 loss', () => {
+  it('doubles after a loss', () => {
     const history = [makeLoss('dozen1', 5)];
     const bets = strat.nextBets(makeCtx(history));
     expect(bets[0].amount).toBe(10);
   });
 
-  it('dozen1 progression independent of concurrent red bet', () => {
+  it('resets after a win', () => {
+    const history = [makeLoss('dozen1', 5), makeWin('dozen1', 10)];
+    const bets = strat.nextBets(makeCtx(history));
+    expect(bets[0].amount).toBe(5);
+  });
+
+  it('dozen1 progression is independent of a concurrent red bet', () => {
+    // History contains bets for BOTH red and dozen1 on each spin
     const mixedLoss: SpinResult = {
       pocket: { number: 0, color: 'green' } as Pocket,
       bets: [
@@ -231,34 +181,38 @@ describe('dalembert – dozen1 target', () => {
       bankrollAfter: 990,
     };
     const bets = strat.nextBets(makeCtx([mixedLoss]));
+    // Martingale on dozen1: after 1 loss → 10
     expect(bets[0].kind).toBe('dozen1');
-    // 1 dozen1 loss → stake = 5 + 5 = 10
     expect(bets[0].amount).toBe(10);
   });
 
   it('payout on dozen win is 2×stake (simulate check)', () => {
+    // Find a spin where dozen1 wins and verify netPnl = 2 × stake
     const r = simulate({
-      strategy: dalembert({ target: 'dozen1', baseUnit: 5 }),
+      strategy: martingale({ target: 'dozen1', baseUnit: 5 }),
       wheelType: 'european',
       startingBankroll: 1000,
       baseUnit: 5,
       maxSpins: 200,
       seed: 42,
     });
-    const wins = r.spins.filter((s) => s.bets.length === 1 && s.netPnl > 0);
+    const wins = r.spins.filter(
+      (s) => s.bets.length === 1 && s.netPnl > 0,
+    );
     expect(wins.length).toBeGreaterThan(0);
     for (const w of wins) {
+      // payout multiplier for dozen = 2
       expect(w.netPnl).toBe(w.bets[0].amount * 2);
     }
   });
 });
 
 // ---------------------------------------------------------------------------
-// Straight target
+// Straight target: stake progression, number field, payout
 // ---------------------------------------------------------------------------
 
-describe('dalembert – straight target (number 17)', () => {
-  const strat = dalembert({ target: { kind: 'straight', number: 17 }, baseUnit: 5 });
+describe('martingale – straight target (number 17)', () => {
+  const strat = martingale({ target: { kind: 'straight', number: 17 }, baseUnit: 5 });
 
   it('first bet is kind=straight, number=17, amount=5', () => {
     const bets = strat.nextBets(makeCtx([]));
@@ -268,36 +222,36 @@ describe('dalembert – straight target (number 17)', () => {
     expect(bets[0].amount).toBe(5);
   });
 
-  it('increases stake after a loss on straight:17', () => {
-    const history = [
-      {
-        pocket: { number: 0, color: 'green' } as Pocket,
-        bets: [{ kind: 'straight' as const, amount: 5, number: 17 }],
-        netPnl: -5,
-        bankrollAfter: 995,
-      },
-    ];
+  it('doubles after a loss on straight:17', () => {
+    const history = [makeLoss('straight', 5, 17)];
     const bets = strat.nextBets(makeCtx(history));
     expect(bets[0].amount).toBe(10);
     expect(bets[0].number).toBe(17);
   });
 
-  it('straight:17 does NOT interfere with straight:5 history', () => {
+  it('resets after a win on straight:17', () => {
+    const history = [makeLoss('straight', 5, 17), makeWin('straight', 10, 17)];
+    const bets = strat.nextBets(makeCtx(history));
+    expect(bets[0].amount).toBe(5);
+  });
+
+  it('straight:17 does NOT interfere with straight:5 progression', () => {
+    // Strategy targets straight:17; history contains bets for straight:5 only
     const lossOn5: SpinResult = {
       pocket: { number: 0, color: 'green' } as Pocket,
       bets: [{ kind: 'straight', amount: 5, number: 5 }],
       netPnl: -5,
       bankrollAfter: 995,
     };
-    // No matching bet for straight:17 in history → stays at base
     const bets = strat.nextBets(makeCtx([lossOn5]));
+    // No matching bet in history → reset to base
     expect(bets[0].amount).toBe(5);
     expect(bets[0].number).toBe(17);
   });
 
   it('payout on straight win is 35×stake', () => {
     const r = simulate({
-      strategy: dalembert({ target: { kind: 'straight', number: 7 }, baseUnit: 1 }),
+      strategy: martingale({ target: { kind: 'straight', number: 7 }, baseUnit: 1 }),
       wheelType: 'european',
       startingBankroll: 5000,
       baseUnit: 1,
