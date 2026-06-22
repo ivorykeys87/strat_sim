@@ -105,6 +105,19 @@ export function payoutMultiplier(kind: BetKind): number {
     case 'column2':
     case 'column3':
       return 2;
+    case 'street1':
+    case 'street2':
+    case 'street3':
+    case 'street4':
+    case 'street5':
+    case 'street6':
+    case 'street7':
+    case 'street8':
+    case 'street9':
+    case 'street10':
+    case 'street11':
+    case 'street12':
+      return 11;
     case 'red':
     case 'black':
     case 'even':
