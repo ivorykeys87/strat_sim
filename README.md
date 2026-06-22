@@ -20,7 +20,7 @@ npm run build    # production build
 
 ## Features
 
-- **Quick form** — configure a list of bets, each with its own strategy (Martingale, Fibonacci, D'Alembert, or Flat), bet kind (all 13 kinds: even-money, dozens, columns, straight numbers), and optional per-bet base-unit override. Multiple bets run in parallel via the composite strategy.
+- **Quick form** — configure a list of bets, each with its own strategy (Martingale, Fibonacci, D'Alembert, or Flat), bet kind (all 25 kinds: even-money, dozens, columns, streets, straight numbers), and optional per-bet base-unit override. Multiple bets run in parallel via the composite strategy.
 - **Visual builder** — drag-and-drop Blockly workspace for building custom strategies without code. The default workspace shows a Martingale-on-red equivalent.
 - **Per-spin table** — scrollable table of the last 50 spins showing pocket number, color dot, stake, P&L, and bankroll after each spin.
 - **Monte Carlo** — set Runs > 1 to aggregate thousands of simulations and view the final-bankroll distribution histogram plus ruin rate / percentile stats.
