@@ -782,6 +782,15 @@ export default function Home() {
                         <span className="text-gray-300 capitalize">{row.color}</span>
                       </span>
                     </td>
+                    <td className="py-1.5 pr-3 font-mono text-xs text-gray-300 whitespace-normal break-words max-w-[16rem]">
+                      {row.bets
+                        .map((b) =>
+                          b.kind === 'straight'
+                            ? `straight #${b.number ?? 0}: ${b.amount.toFixed(2)}`
+                            : `${b.kind}: ${b.amount.toFixed(2)}`,
+                        )
+                        .join(', ')}
+                    </td>
                     <td className="py-1.5 pr-3 text-right font-mono text-gray-300">
                       {row.totalStake.toFixed(2)}
                     </td>
