@@ -13,6 +13,23 @@ export function buildToolbox(): object {
         contents: [
           {
             kind: 'block',
+            type: 'bet_block',
+            fields: { NAME: 'main' },
+            inputs: {
+              BETS: {
+                block: {
+                  type: 'place_bet',
+                  inputs: {
+                    AMOUNT: {
+                      block: { type: 'amount_base_unit' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          {
+            kind: 'block',
             type: 'place_bet',
             inputs: {
               AMOUNT: {
