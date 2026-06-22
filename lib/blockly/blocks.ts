@@ -141,6 +141,64 @@ export function defineBlocks(Blockly: any): void {
     },
   };
 
+  // ── bet_block ──────────────────────────────────────────────────────────────
+  Blockly.Blocks['bet_block'] = {
+    init(this: any) {
+      this.appendDummyInput()
+        .appendField('Bet block')
+        .appendField(new Blockly.FieldTextInput('main'), 'NAME');
+      this.appendStatementInput('BETS').setCheck(null);
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(290);
+      this.setTooltip(
+        'Groups bets as a single unit. Win/loss is determined by the sum of all contained bets\' P&L on each spin.',
+      );
+    },
+  };
+
+  // ── condition_block_won ────────────────────────────────────────────────────
+  Blockly.Blocks['condition_block_won'] = {
+    init(this: any) {
+      this.appendDummyInput()
+        .appendField('bet block')
+        .appendField(new Blockly.FieldTextInput('main'), 'NAME')
+        .appendField('won last spin');
+      this.setOutput(true, 'Boolean');
+      this.setColour(120);
+      this.setTooltip('True if the named bet block had a positive total P&L on the last spin.');
+    },
+  };
+
+  // ── condition_block_lost ───────────────────────────────────────────────────
+  Blockly.Blocks['condition_block_lost'] = {
+    init(this: any) {
+      this.appendDummyInput()
+        .appendField('bet block')
+        .appendField(new Blockly.FieldTextInput('main'), 'NAME')
+        .appendField('lost last spin');
+      this.setOutput(true, 'Boolean');
+      this.setColour(120);
+      this.setTooltip('True if the named bet block had a negative total P&L on the last spin.');
+    },
+  };
+
+  // ── condition_block_loss_streak ────────────────────────────────────────────
+  Blockly.Blocks['condition_block_loss_streak'] = {
+    init(this: any) {
+      this.appendDummyInput()
+        .appendField('loss streak on bet block')
+        .appendField(new Blockly.FieldTextInput('main'), 'NAME')
+        .appendField('≥')
+        .appendField(new Blockly.FieldNumber(1, 1, Infinity, 1), 'N');
+      this.setOutput(true, 'Boolean');
+      this.setColour(120);
+      this.setTooltip(
+        'True if the named bet block has lost on N or more consecutive spins.',
+      );
+    },
+  };
+
   // ── amount_base_unit ───────────────────────────────────────────────────────
   Blockly.Blocks['amount_base_unit'] = {
     init(this: any) {
