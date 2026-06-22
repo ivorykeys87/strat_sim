@@ -1,16 +1,20 @@
-import type { BetKind } from '../bets';
+import type { ProgressionTarget } from '../bets';
+import { progressionBet, betMatchesTarget } from '../bets';
 import type { Strategy, StrategyContext } from '../strategy';
 
-type EvenMoneyTarget = 'red' | 'black' | 'even' | 'odd' | 'low' | 'high';
-
 export function martingale(opts: {
-  target: EvenMoneyTarget;
+  target: ProgressionTarget;
   baseUnit?: number;
 }): Strategy {
   const { target } = opts;
 
+  const name =
+    typeof target === 'string'
+      ? `Martingale(${target})`
+      : `Martingale(straight:${target.number})`;
+
   return {
-    name: `Martingale(${target})`,
+    name,
 
     nextBets(ctx: StrategyContext) {
       const base = opts.baseUnit ?? ctx.baseUnit;
@@ -20,8 +24,8 @@ export function martingale(opts: {
 
       if (history.length > 0) {
         const last = history[history.length - 1];
-        // Find the bet on our target in the last spin
-        const lastBet = last.bets.find((b) => b.kind === (target as BetKind));
+        // Find the bet on our specific target in the last spin
+        const lastBet = last.bets.find((b) => betMatchesTarget(b, target));
         if (lastBet !== undefined && last.netPnl < 0) {
           // Lost last spin — double the previous stake
           stake = lastBet.amount * 2;
@@ -34,7 +38,7 @@ export function martingale(opts: {
         return [];
       }
 
-      return [{ kind: target as BetKind, amount: stake }];
+      return [progressionBet(target, stake)];
     },
   };
 }
