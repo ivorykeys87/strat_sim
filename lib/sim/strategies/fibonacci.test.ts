@@ -196,3 +196,124 @@ describe('fibonacci – nextBets stake progression', () => {
     expect(bets).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Dozen target
+// ---------------------------------------------------------------------------
+
+describe('fibonacci – dozen1 target', () => {
+  const strat = fibonacci({ target: 'dozen1', baseUnit: 5 });
+
+  it('first bet is kind=dozen1, amount=5', () => {
+    const bets = strat.nextBets(makeCtx([]));
+    expect(bets).toHaveLength(1);
+    expect(bets[0].kind).toBe('dozen1');
+    expect(bets[0].amount).toBe(5);
+  });
+
+  it('advances index after a dozen1 loss', () => {
+    const history = [makeLoss('dozen1', 5)];
+    const bets = strat.nextBets(makeCtx(history));
+    // index=1, fib[1]=1, stake=5
+    expect(bets[0].amount).toBe(5);
+  });
+
+  it('advances two steps after two dozen1 losses', () => {
+    const history = [makeLoss('dozen1', 5), makeLoss('dozen1', 5)];
+    const bets = strat.nextBets(makeCtx(history));
+    // index=2, fib[2]=2, stake=10
+    expect(bets[0].amount).toBe(10);
+  });
+
+  it('dozen1 progression independent of concurrent red bet', () => {
+    // Both red and dozen1 bets in the same spin
+    const mixedLoss: SpinResult = {
+      pocket: { number: 0, color: 'green' } as Pocket,
+      bets: [
+        { kind: 'red', amount: 5 },
+        { kind: 'dozen1', amount: 5 },
+      ],
+      netPnl: -10,
+      bankrollAfter: 990,
+    };
+    const bets = strat.nextBets(makeCtx([mixedLoss]));
+    expect(bets[0].kind).toBe('dozen1');
+    // index=1 after one dozen1 loss, fib[1]=1 → stake=5
+    expect(bets[0].amount).toBe(5);
+  });
+
+  it('payout on dozen win is 2×stake (simulate check)', () => {
+    const r = simulate({
+      strategy: fibonacci({ target: 'dozen1', baseUnit: 5 }),
+      wheelType: 'european',
+      startingBankroll: 1000,
+      baseUnit: 5,
+      maxSpins: 200,
+      seed: 42,
+    });
+    const wins = r.spins.filter((s) => s.bets.length === 1 && s.netPnl > 0);
+    expect(wins.length).toBeGreaterThan(0);
+    for (const w of wins) {
+      expect(w.netPnl).toBe(w.bets[0].amount * 2);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Straight target
+// ---------------------------------------------------------------------------
+
+describe('fibonacci – straight target (number 17)', () => {
+  const strat = fibonacci({ target: { kind: 'straight', number: 17 }, baseUnit: 5 });
+
+  it('first bet is kind=straight, number=17, amount=5', () => {
+    const bets = strat.nextBets(makeCtx([]));
+    expect(bets).toHaveLength(1);
+    expect(bets[0].kind).toBe('straight');
+    expect(bets[0].number).toBe(17);
+    expect(bets[0].amount).toBe(5);
+  });
+
+  it('advances after a loss on straight:17', () => {
+    const history = [
+      {
+        pocket: { number: 0, color: 'green' } as Pocket,
+        bets: [{ kind: 'straight' as const, amount: 5, number: 17 }],
+        netPnl: -5,
+        bankrollAfter: 995,
+      },
+    ];
+    // index=1, fib[1]=1 → stake=5
+    const bets = strat.nextBets(makeCtx(history));
+    expect(bets[0].amount).toBe(5);
+    expect(bets[0].number).toBe(17);
+  });
+
+  it('straight:17 does NOT interfere with straight:5 history', () => {
+    const lossOn5: SpinResult = {
+      pocket: { number: 0, color: 'green' } as Pocket,
+      bets: [{ kind: 'straight', amount: 5, number: 5 }],
+      netPnl: -5,
+      bankrollAfter: 995,
+    };
+    // No matching bet in history → index stays 0 → stake=5
+    const bets = strat.nextBets(makeCtx([lossOn5]));
+    expect(bets[0].amount).toBe(5);
+    expect(bets[0].number).toBe(17);
+  });
+
+  it('payout on straight win is 35×stake', () => {
+    const r = simulate({
+      strategy: fibonacci({ target: { kind: 'straight', number: 7 }, baseUnit: 1 }),
+      wheelType: 'european',
+      startingBankroll: 5000,
+      baseUnit: 1,
+      maxSpins: 500,
+      seed: 99,
+    });
+    const wins = r.spins.filter((s) => s.netPnl > 0);
+    for (const w of wins) {
+      expect(w.netPnl).toBe(w.bets[0].amount * 35);
+    }
+  });
+});
