@@ -745,11 +745,13 @@ export default function Home() {
         </section>
       )}
 
-      {/* ── Per-spin results table (single-run, last 50 spins) ── */}
-      {committed.runs <= 1 && singleResult !== null && spinTableData.length > 0 && (
+      {/* ── Per-spin results table (last 50 spins; first run when multi-run) ── */}
+      {singleResult !== null && spinTableData.length > 0 && (
         <section className="w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-800 px-4 py-5">
           <p className="text-xs uppercase tracking-widest text-gray-400 mb-3">
-            Spin history (last {spinTableData.length} spins)
+            {committed.runs > 1
+              ? `Spin history — first run (last ${spinTableData.length} spins)`
+              : `Spin history (last ${spinTableData.length} spins)`}
           </p>
           <div className="overflow-x-auto max-h-72 overflow-y-auto">
             <table className="w-full text-sm border-collapse">
