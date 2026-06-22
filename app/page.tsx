@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   Tooltip,
@@ -37,6 +39,45 @@ const DEFAULT_FORM: FormState = {
   seed: 42,
   runs: 1,
 };
+
+const LS_KEY = 'strat-sim:form';
+
+/** Load FormState from localStorage, falling back to DEFAULT_FORM if missing/invalid. */
+function loadForm(): FormState {
+  if (typeof window === 'undefined') return DEFAULT_FORM;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return DEFAULT_FORM;
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== 'object' || parsed === null) return DEFAULT_FORM;
+    const p = parsed as Record<string, unknown>;
+    // Validate every key has the correct type.
+    if (
+      typeof p.strategy !== 'string' ||
+      typeof p.target !== 'string' ||
+      typeof p.wheelType !== 'string' ||
+      typeof p.startingBankroll !== 'number' ||
+      typeof p.baseUnit !== 'number' ||
+      typeof p.maxSpins !== 'number' ||
+      typeof p.seed !== 'number' ||
+      typeof p.runs !== 'number'
+    ) {
+      return DEFAULT_FORM;
+    }
+    return {
+      strategy: p.strategy as StrategyName,
+      target: p.target as EvenMoneyTarget,
+      wheelType: p.wheelType as WheelType,
+      startingBankroll: p.startingBankroll,
+      baseUnit: p.baseUnit,
+      maxSpins: p.maxSpins,
+      seed: p.seed,
+      runs: p.runs,
+    };
+  } catch {
+    return DEFAULT_FORM;
+  }
+}
 
 function buildStrategy(form: FormState) {
   switch (form.strategy) {
@@ -78,12 +119,21 @@ const inputClass =
 const labelClass = 'block text-xs uppercase tracking-widest text-gray-400 mb-1';
 
 export default function Home() {
-  const [form, setForm] = useState<FormState>(DEFAULT_FORM);
+  const [form, setForm] = useState<FormState>(() => loadForm());
   const [singleResult, setSingleResult] = useState<SimulateResult | null>(
     () => runSim(DEFAULT_FORM),
   );
   const [aggregate, setAggregate] = useState<MonteCarloResult | null>(null);
   const [committed, setCommitted] = useState<FormState>(DEFAULT_FORM);
+
+  // Persist form to localStorage whenever it changes.
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(form));
+    } catch {
+      // Ignore quota / private-browsing errors.
+    }
+  }, [form]);
 
   const handleRun = useCallback(() => {
     const runs = Math.max(1, form.runs);
@@ -114,6 +164,13 @@ export default function Home() {
       ? singleResult.spins.map((s, i) => ({ spin: i + 1, bankroll: s.bankrollAfter }))
       : [];
 
+  const histogramData = aggregate
+    ? aggregate.histogram.map((b) => ({
+        bin: `${b.binStart.toFixed(0)}–${b.binEnd.toFixed(0)}`,
+        count: b.count,
+      }))
+    : [];
+
   const summaryLine = (() => {
     const base = [
       STRATEGY_LABELS[committed.strategy],
@@ -127,7 +184,7 @@ export default function Home() {
       `${committed.startingBankroll.toLocaleString()} starting bankroll`,
     ].join(' ');
     if (committed.runs > 1) {
-      return `${base} · ${committed.runs} runs (seeds ${committed.seed}–${committed.seed + committed.runs - 1})`;
+      return `${base} · ${committed.runs} runs (base seed ${committed.seed})`;
     }
     return base;
   })();
@@ -278,6 +335,10 @@ export default function Home() {
           <StatCard label="Median Final Bankroll" value={`${aggregate.median.toFixed(2)}`} />
           <StatCard label="Mean Final Bankroll" value={`${aggregate.mean.toFixed(2)}`} />
           <StatCard label="Worst Drawdown" value={`${aggregate.worstDrawdown.toFixed(2)}`} />
+          <StatCard label="5th %ile" value={`${aggregate.p5.toFixed(2)}`} />
+          <StatCard label="25th %ile" value={`${aggregate.p25.toFixed(2)}`} />
+          <StatCard label="75th %ile" value={`${aggregate.p75.toFixed(2)}`} />
+          <StatCard label="95th %ile" value={`${aggregate.p95.toFixed(2)}`} />
         </section>
       ) : null}
 
@@ -315,6 +376,41 @@ export default function Home() {
                 isAnimationActive={false}
               />
             </LineChart>
+          </ResponsiveContainer>
+        </section>
+      )}
+
+      {/* ── Final bankroll distribution histogram (multi-run only) ── */}
+      {aggregate !== null && (
+        <section className="w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-800 px-4 py-5">
+          <p className="text-xs uppercase tracking-widest text-gray-400 mb-4">
+            Final bankroll distribution
+          </p>
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={histogramData} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis
+                dataKey="bin"
+                tick={{ fill: '#9ca3af', fontSize: 10 }}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                allowDecimals={false}
+              />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }}
+                labelStyle={{ color: '#d1d5db' }}
+                itemStyle={{ color: '#a5b4fc' }}
+                formatter={(v: number) => [v, 'Count']}
+                labelFormatter={(label: string) => `Range: ${label}`}
+              />
+              <Bar
+                dataKey="count"
+                fill="#6366f1"
+                isAnimationActive={false}
+              />
+            </BarChart>
           </ResponsiveContainer>
         </section>
       )}
