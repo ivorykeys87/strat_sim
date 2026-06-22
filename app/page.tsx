@@ -35,6 +35,7 @@ const DEFAULT_FORM: FormState = {
   baseUnit: 5,
   maxSpins: 200,
   seed: 42,
+  runs: 1,
 };
 
 function buildStrategy(form: FormState) {
