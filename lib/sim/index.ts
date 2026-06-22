@@ -9,3 +9,5 @@ export type { SimulateOptions, SimulateResult } from './simulate';
 export { martingale } from './strategies/martingale';
 export { fibonacci } from './strategies/fibonacci';
 export { dalembert } from './strategies/dalembert';
+export { monteCarlo } from './monteCarlo';
+export type { MonteCarloResult } from './monteCarlo';
