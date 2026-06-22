@@ -65,6 +65,7 @@ export const MATH_OP_OPTIONS: [string, string][] = [
 export type BlockType =
   | 'strategy_root'
   | 'place_bet'
+  | 'bet_block'
   | 'amount_base_unit'
   | 'amount_constant'
   | 'amount_last_stake_times'
@@ -74,6 +75,9 @@ export type BlockType =
   | 'condition_last_won_on'
   | 'condition_loss_streak'
   | 'condition_history_length'
+  | 'condition_block_won'
+  | 'condition_block_lost'
+  | 'condition_block_loss_streak'
   | 'control_if_then'
   | 'control_if_then_else'
   | 'control_compare'
@@ -134,6 +138,64 @@ export function defineBlocks(Blockly: any): void {
     domToMutation(this: any, xmlElement: Element) {
       const kind = xmlElement.getAttribute('kind') ?? 'red';
       this.updateShape_(kind);
+    },
+  };
+
+  // ── bet_block ──────────────────────────────────────────────────────────────
+  Blockly.Blocks['bet_block'] = {
+    init(this: any) {
+      this.appendDummyInput()
+        .appendField('Bet block')
+        .appendField(new Blockly.FieldTextInput('main'), 'NAME');
+      this.appendStatementInput('BETS').setCheck(null);
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(290);
+      this.setTooltip(
+        'Groups bets as a single unit. Win/loss is determined by the sum of all contained bets\' P&L on each spin.',
+      );
+    },
+  };
+
+  // ── condition_block_won ────────────────────────────────────────────────────
+  Blockly.Blocks['condition_block_won'] = {
+    init(this: any) {
+      this.appendDummyInput()
+        .appendField('bet block')
+        .appendField(new Blockly.FieldTextInput('main'), 'NAME')
+        .appendField('won last spin');
+      this.setOutput(true, 'Boolean');
+      this.setColour(120);
+      this.setTooltip('True if the named bet block had a positive total P&L on the last spin.');
+    },
+  };
+
+  // ── condition_block_lost ───────────────────────────────────────────────────
+  Blockly.Blocks['condition_block_lost'] = {
+    init(this: any) {
+      this.appendDummyInput()
+        .appendField('bet block')
+        .appendField(new Blockly.FieldTextInput('main'), 'NAME')
+        .appendField('lost last spin');
+      this.setOutput(true, 'Boolean');
+      this.setColour(120);
+      this.setTooltip('True if the named bet block had a negative total P&L on the last spin.');
+    },
+  };
+
+  // ── condition_block_loss_streak ────────────────────────────────────────────
+  Blockly.Blocks['condition_block_loss_streak'] = {
+    init(this: any) {
+      this.appendDummyInput()
+        .appendField('loss streak on bet block')
+        .appendField(new Blockly.FieldTextInput('main'), 'NAME')
+        .appendField('≥')
+        .appendField(new Blockly.FieldNumber(1, 1, Infinity, 1), 'N');
+      this.setOutput(true, 'Boolean');
+      this.setColour(120);
+      this.setTooltip(
+        'True if the named bet block has lost on N or more consecutive spins.',
+      );
     },
   };
 

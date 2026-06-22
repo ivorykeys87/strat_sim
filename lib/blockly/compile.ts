@@ -173,6 +173,29 @@ function lastWonOn(history: SpinResult[], kind: BetKind): boolean {
   return bet !== undefined && last.netPnl > 0;
 }
 
+/**
+ * Returns the total P&L for the named bet block on the last spin,
+ * or undefined if no such block was tracked on that spin.
+ */
+function blockPnlOnLastSpin(history: SpinResult[], name: string): number | undefined {
+  return lastSpin(history)?.blockPnls?.[name];
+}
+
+/**
+ * Returns the number of consecutive spins (counting back from the most recent)
+ * where the named bet block was present AND had a negative P&L.
+ * Stops at the first spin where the block is absent OR its P&L is >= 0.
+ */
+function blockLossStreak(history: SpinResult[], name: string): number {
+  let streak = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const pnl = history[i].blockPnls?.[name];
+    if (pnl === undefined || pnl >= 0) break;
+    streak++;
+  }
+  return streak;
+}
+
 // ---------------------------------------------------------------------------
 // Interpreter
 // ---------------------------------------------------------------------------
@@ -182,6 +205,8 @@ interface EvalCtx {
   bankroll: number;
   baseUnit: number;
   bets: Bet[];
+  /** Set while executing the body of a bet_block; undefined outside any block. */
+  currentBlockId?: string;
 }
 
 function evalAmount(node: BlockNode | undefined, ctx: EvalCtx): number {
@@ -291,6 +316,26 @@ function evalCondition(node: BlockNode | undefined, ctx: EvalCtx): boolean {
       return !evalCondition(node.inputs?.['CONDITION']?.block, ctx);
     }
 
+    case 'condition_block_won': {
+      const name = (node.fields?.['NAME'] as string | undefined) ?? 'main';
+      const pnl = blockPnlOnLastSpin(ctx.history, name);
+      return pnl !== undefined && pnl > 0;
+    }
+
+    case 'condition_block_lost': {
+      const name = (node.fields?.['NAME'] as string | undefined) ?? 'main';
+      const pnl = blockPnlOnLastSpin(ctx.history, name);
+      return pnl !== undefined && pnl < 0;
+    }
+
+    case 'condition_block_loss_streak': {
+      const name = (node.fields?.['NAME'] as string | undefined) ?? 'main';
+      const n = typeof node.fields?.['N'] === 'number'
+        ? (node.fields['N'] as number)
+        : Number(node.fields?.['N'] ?? 1);
+      return blockLossStreak(ctx.history, name) >= n;
+    }
+
     default:
       return false;
   }
@@ -320,7 +365,19 @@ function execStatement(node: BlockNode, ctx: EvalCtx): void {
           : Number(node.fields?.['NUMBER'] ?? 0);
         bet.number = num;
       }
+      if (ctx.currentBlockId !== undefined) {
+        bet.blockId = ctx.currentBlockId;
+      }
       ctx.bets.push(bet);
+      break;
+    }
+
+    case 'bet_block': {
+      const name = (node.fields?.['NAME'] as string | undefined) ?? 'main';
+      const prev = ctx.currentBlockId;
+      ctx.currentBlockId = name;
+      execStatements(node.inputs?.['BETS']?.block, ctx);
+      ctx.currentBlockId = prev;
       break;
     }
 

@@ -389,3 +389,189 @@ describe('compileWorkspace – bankroll guard', () => {
     expect(bets).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// bet_block — wrapper, blockId stamping, and block-level conditions
+// ---------------------------------------------------------------------------
+
+describe('compileWorkspace – bet_block', () => {
+  // Helper: build a workspace with a single bet_block named `name` containing
+  // two place_bet children chained via .next.
+  function makeBetBlockWs(name: string) {
+    return {
+      blocks: {
+        blocks: [
+          {
+            type: 'strategy_root',
+            inputs: {
+              DO: {
+                block: {
+                  type: 'bet_block',
+                  fields: { NAME: name },
+                  inputs: {
+                    BETS: {
+                      block: {
+                        type: 'place_bet',
+                        fields: { KIND: 'red', NUMBER: 0 },
+                        inputs: { AMOUNT: { block: { type: 'amount_base_unit' } } },
+                        next: {
+                          block: {
+                            type: 'place_bet',
+                            fields: { KIND: 'black', NUMBER: 0 },
+                            inputs: { AMOUNT: { block: { type: 'amount_base_unit' } } },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+  }
+
+  it('a) bets inside a bet_block get blockId stamped with the block name', () => {
+    const strat = compileWorkspace(makeBetBlockWs('hedge'));
+    const bets = strat.nextBets({ bankroll: 1000, history: [], baseUnit: 5 });
+    expect(bets).toHaveLength(2);
+    expect(bets[0].blockId).toBe('hedge');
+    expect(bets[1].blockId).toBe('hedge');
+  });
+
+  it('b) bare place_bet outside a bet_block has no blockId', () => {
+    const ws = {
+      blocks: {
+        blocks: [
+          {
+            type: 'strategy_root',
+            inputs: {
+              DO: {
+                block: {
+                  type: 'place_bet',
+                  fields: { KIND: 'red', NUMBER: 0 },
+                  inputs: { AMOUNT: { block: { type: 'amount_base_unit' } } },
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+    const bets = compileWorkspace(ws).nextBets({ bankroll: 1000, history: [], baseUnit: 5 });
+    expect(bets).toHaveLength(1);
+    expect(bets[0].blockId).toBeUndefined();
+  });
+
+  // Helpers to build hand-crafted history entries with blockPnls attached.
+  function makeBlockWin(blockName: string, pnl: number): SpinResult {
+    return {
+      pocket: { number: 1, color: 'red' } as Pocket,
+      bets: [{ kind: 'red' as never, amount: pnl, blockId: blockName }],
+      netPnl: pnl,
+      bankrollAfter: 1000 + pnl,
+      blockPnls: { [blockName]: pnl },
+    };
+  }
+
+  function makeBlockLoss(blockName: string, pnl: number): SpinResult {
+    return {
+      pocket: { number: 0, color: 'green' } as Pocket,
+      bets: [{ kind: 'red' as never, amount: Math.abs(pnl), blockId: blockName }],
+      netPnl: pnl,
+      bankrollAfter: 1000 + pnl,
+      blockPnls: { [blockName]: pnl },
+    };
+  }
+
+  // Workspace that fires a bet when condition_block_won is true.
+  function makeConditionWs(conditionType: string, blockName: string, extraFields: Record<string, unknown> = {}) {
+    return {
+      blocks: {
+        blocks: [
+          {
+            type: 'strategy_root',
+            inputs: {
+              DO: {
+                block: {
+                  type: 'control_if_then',
+                  inputs: {
+                    CONDITION: {
+                      block: {
+                        type: conditionType,
+                        fields: { NAME: blockName, ...extraFields },
+                      },
+                    },
+                    DO: {
+                      block: {
+                        type: 'place_bet',
+                        fields: { KIND: 'red', NUMBER: 0 },
+                        inputs: { AMOUNT: { block: { type: 'amount_base_unit' } } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+  }
+
+  it('c) condition_block_won is true when prior spin blockPnls[name] > 0', () => {
+    const strat = compileWorkspace(makeConditionWs('condition_block_won', 'main'));
+    const winHistory: SpinResult[] = [makeBlockWin('main', 10)];
+    const lossHistory: SpinResult[] = [makeBlockLoss('main', -10)];
+    const emptyHistory: SpinResult[] = [];
+
+    expect(strat.nextBets({ bankroll: 1000, history: winHistory, baseUnit: 5 })).toHaveLength(1);
+    expect(strat.nextBets({ bankroll: 1000, history: lossHistory, baseUnit: 5 })).toHaveLength(0);
+    expect(strat.nextBets({ bankroll: 1000, history: emptyHistory, baseUnit: 5 })).toHaveLength(0);
+  });
+
+  it('d) condition_block_lost is true when prior spin blockPnls[name] < 0', () => {
+    const strat = compileWorkspace(makeConditionWs('condition_block_lost', 'main'));
+    const winHistory: SpinResult[] = [makeBlockWin('main', 10)];
+    const lossHistory: SpinResult[] = [makeBlockLoss('main', -10)];
+    const emptyHistory: SpinResult[] = [];
+
+    expect(strat.nextBets({ bankroll: 1000, history: lossHistory, baseUnit: 5 })).toHaveLength(1);
+    expect(strat.nextBets({ bankroll: 1000, history: winHistory, baseUnit: 5 })).toHaveLength(0);
+    expect(strat.nextBets({ bankroll: 1000, history: emptyHistory, baseUnit: 5 })).toHaveLength(0);
+  });
+
+  it('e) condition_block_loss_streak counts consecutive block losses correctly', () => {
+    const losses3: SpinResult[] = [
+      makeBlockLoss('main', -5),
+      makeBlockLoss('main', -5),
+      makeBlockLoss('main', -5),
+    ];
+
+    const stratGte3 = compileWorkspace(makeConditionWs('condition_block_loss_streak', 'main', { N: 3 }));
+    const stratGte4 = compileWorkspace(makeConditionWs('condition_block_loss_streak', 'main', { N: 4 }));
+
+    // 3 consecutive losses → streak=3 → ≥3 true, ≥4 false
+    expect(stratGte3.nextBets({ bankroll: 1000, history: losses3, baseUnit: 5 })).toHaveLength(1);
+    expect(stratGte4.nextBets({ bankroll: 1000, history: losses3, baseUnit: 5 })).toHaveLength(0);
+
+    // A spin where the block is missing breaks the streak
+    const brokenStreak: SpinResult[] = [
+      makeBlockLoss('main', -5),
+      // spin with no blockPnls for 'main' at all
+      {
+        pocket: { number: 5, color: 'red' } as Pocket,
+        bets: [],
+        netPnl: 0,
+        bankrollAfter: 1000,
+      },
+      makeBlockLoss('main', -5),
+      makeBlockLoss('main', -5),
+    ];
+
+    // Streak counts back from the end: 2 consecutive losses before the gap → <3
+    expect(stratGte3.nextBets({ bankroll: 1000, history: brokenStreak, baseUnit: 5 })).toHaveLength(0);
+  });
+});

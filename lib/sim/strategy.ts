@@ -6,6 +6,8 @@ export interface SpinResult {
   bets: Bet[];
   netPnl: number;
   bankrollAfter: number;
+  /** Net P&L grouped by Bet.blockId. Only populated for bets that have a blockId. */
+  blockPnls?: Record<string, number>;
 }
 
 export interface StrategyContext {

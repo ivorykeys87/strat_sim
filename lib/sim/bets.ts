@@ -32,6 +32,8 @@ export type Bet = {
   amount: number;
   /** Required when kind === 'straight' */
   number?: number;
+  /** Optional identifier of the bet_block this bet belongs to (Blockly builder). */
+  blockId?: string;
 };
 
 /**

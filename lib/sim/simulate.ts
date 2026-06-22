@@ -48,13 +48,25 @@ export function simulate(opts: SimulateOptions): SimulateResult {
 
     // Resolve all bets and sum P&L
     let netPnl = 0;
+    const blockPnlsAcc: Record<string, number> = {};
     for (const bet of bets) {
-      netPnl += resolveBet(bet, pocket);
+      const pnl = resolveBet(bet, pocket);
+      netPnl += pnl;
+      if (bet.blockId !== undefined) {
+        blockPnlsAcc[bet.blockId] = (blockPnlsAcc[bet.blockId] ?? 0) + pnl;
+      }
     }
 
     bankroll += netPnl;
 
-    const result: SpinResult = { pocket, bets, netPnl, bankrollAfter: bankroll };
+    const hasBlockPnls = Object.keys(blockPnlsAcc).length > 0;
+    const result: SpinResult = {
+      pocket,
+      bets,
+      netPnl,
+      bankrollAfter: bankroll,
+      ...(hasBlockPnls ? { blockPnls: blockPnlsAcc } : {}),
+    };
     spins.push(result);
 
     // Update peak and drawdown
