@@ -94,6 +94,21 @@ export function buildToolbox(): object {
             type: 'condition_history_length',
             fields: { N: 1 },
           },
+          {
+            kind: 'block',
+            type: 'condition_block_won',
+            fields: { NAME: 'main' },
+          },
+          {
+            kind: 'block',
+            type: 'condition_block_lost',
+            fields: { NAME: 'main' },
+          },
+          {
+            kind: 'block',
+            type: 'condition_block_loss_streak',
+            fields: { NAME: 'main', N: 1 },
+          },
         ],
       },
       {
