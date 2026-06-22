@@ -22,7 +22,7 @@ import {
   flat,
   composite,
 } from '@/lib/sim';
-import type { SimulateResult, MonteCarloResult, WheelType, BetKind } from '@/lib/sim';
+import type { SimulateResult, MonteCarloResult, WheelType, BetKind, Bet } from '@/lib/sim';
 import { compileWorkspace } from '@/lib/blockly/compile';
 import type { ProgressionTarget } from '@/lib/sim';
 
@@ -282,7 +282,16 @@ export default function Home() {
         runs,
       });
       setAggregate(mc);
-      setSingleResult(null);
+      // Retain the first run so the spin-history table has data to display.
+      const firstRun = simulate({
+        strategy,
+        wheelType: form.wheelType,
+        startingBankroll: form.startingBankroll,
+        baseUnit: form.baseUnit,
+        maxSpins: form.maxSpins,
+        seed: form.seed,
+      });
+      setSingleResult(firstRun);
     }
     setCommitted({ ...form, runs });
   }, [form, mode]);
@@ -356,17 +365,17 @@ export default function Home() {
 
   // ── Per-spin table data (last 50 spins) ───────────────────────────────────
 
-  const spinTableData =
-    singleResult && committed.runs <= 1
-      ? singleResult.spins.slice(-50).map((s, i, arr) => ({
-          spinIndex: singleResult.spins.length - arr.length + i + 1,
-          label: s.pocket.label ?? String(s.pocket.number),
-          color: s.pocket.color,
-          totalStake: s.bets.reduce((acc, b) => acc + b.amount, 0),
-          netPnl: s.netPnl,
-          bankrollAfter: s.bankrollAfter,
-        }))
-      : [];
+  const spinTableData = singleResult
+    ? singleResult.spins.slice(-50).map((s, i, arr) => ({
+        spinIndex: singleResult.spins.length - arr.length + i + 1,
+        label: s.pocket.label ?? String(s.pocket.number),
+        color: s.pocket.color,
+        bets: s.bets as Bet[],
+        totalStake: s.bets.reduce((acc, b) => acc + b.amount, 0),
+        netPnl: s.netPnl,
+        bankrollAfter: s.bankrollAfter,
+      }))
+    : [];
 
   return (
     <main className="min-h-screen flex flex-col items-center gap-8 p-8">
@@ -736,11 +745,13 @@ export default function Home() {
         </section>
       )}
 
-      {/* ── Per-spin results table (single-run, last 50 spins) ── */}
-      {committed.runs <= 1 && singleResult !== null && spinTableData.length > 0 && (
+      {/* ── Per-spin results table (last 50 spins; first run when multi-run) ── */}
+      {singleResult !== null && spinTableData.length > 0 && (
         <section className="w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-800 px-4 py-5">
           <p className="text-xs uppercase tracking-widest text-gray-400 mb-3">
-            Spin history (last {spinTableData.length} spins)
+            {committed.runs > 1
+              ? `Spin history — first run (last ${spinTableData.length} spins)`
+              : `Spin history (last ${spinTableData.length} spins)`}
           </p>
           <div className="overflow-x-auto max-h-72 overflow-y-auto">
             <table className="w-full text-sm border-collapse">
@@ -749,6 +760,7 @@ export default function Home() {
                   <th className="py-2 pr-3 text-left">Spin</th>
                   <th className="py-2 pr-3 text-left">Pocket</th>
                   <th className="py-2 pr-3 text-left">Color</th>
+                  <th className="py-2 pr-3 text-left">Bets</th>
                   <th className="py-2 pr-3 text-right">Stake</th>
                   <th className="py-2 pr-3 text-right">P&amp;L</th>
                   <th className="py-2 text-right">Bankroll</th>
@@ -769,6 +781,15 @@ export default function Home() {
                         <ColorDot color={row.color} />
                         <span className="text-gray-300 capitalize">{row.color}</span>
                       </span>
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-xs text-gray-300 whitespace-normal break-words max-w-[16rem]">
+                      {row.bets
+                        .map((b) =>
+                          b.kind === 'straight'
+                            ? `straight #${b.number ?? 0}: ${b.amount.toFixed(2)}`
+                            : `${b.kind}: ${b.amount.toFixed(2)}`,
+                        )
+                        .join(', ')}
                     </td>
                     <td className="py-1.5 pr-3 text-right font-mono text-gray-300">
                       {row.totalStake.toFixed(2)}
