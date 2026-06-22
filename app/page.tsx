@@ -760,6 +760,7 @@ export default function Home() {
                   <th className="py-2 pr-3 text-left">Spin</th>
                   <th className="py-2 pr-3 text-left">Pocket</th>
                   <th className="py-2 pr-3 text-left">Color</th>
+                  <th className="py-2 pr-3 text-left">Bets</th>
                   <th className="py-2 pr-3 text-right">Stake</th>
                   <th className="py-2 pr-3 text-right">P&amp;L</th>
                   <th className="py-2 text-right">Bankroll</th>
