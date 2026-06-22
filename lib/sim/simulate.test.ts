@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { simulate } from './simulate';
 import { martingale } from './strategies/martingale';
+import { resolveBet } from './bets';
+import type { Strategy } from './strategy';
 
 const BASE_OPTS = {
   strategy: martingale({ target: 'red', baseUnit: 5 }),
