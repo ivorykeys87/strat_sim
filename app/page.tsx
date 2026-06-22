@@ -259,49 +259,65 @@ export default function Home() {
       </section>
 
       {/* ── Summary stats ── */}
-      <section className="w-full max-w-3xl grid grid-cols-2 gap-4 sm:grid-cols-5">
-        <StatCard label="Final Bankroll" value={`$${result.finalBankroll.toFixed(2)}`} />
-        <StatCard label="Peak Bankroll" value={`$${result.peakBankroll.toFixed(2)}`} />
-        <StatCard label="Max Drawdown" value={`$${result.maxDrawdown.toFixed(2)}`} />
-        <StatCard label="Spins Played" value={String(result.spins.length)} />
-        <StatCard label="Ruined" value={result.ruined ? 'Yes' : 'No'} highlight={result.ruined} />
-      </section>
+      {committed.runs <= 1 && singleResult !== null ? (
+        <section className="w-full max-w-3xl grid grid-cols-2 gap-4 sm:grid-cols-5">
+          <StatCard label="Final Bankroll" value={`${singleResult.finalBankroll.toFixed(2)}`} />
+          <StatCard label="Peak Bankroll" value={`${singleResult.peakBankroll.toFixed(2)}`} />
+          <StatCard label="Max Drawdown" value={`${singleResult.maxDrawdown.toFixed(2)}`} />
+          <StatCard label="Spins Played" value={String(singleResult.spins.length)} />
+          <StatCard label="Ruined" value={singleResult.ruined ? 'Yes' : 'No'} highlight={singleResult.ruined} />
+        </section>
+      ) : aggregate !== null ? (
+        <section className="w-full max-w-3xl grid grid-cols-2 gap-4 sm:grid-cols-5">
+          <StatCard label="Runs" value={String(aggregate.runs)} />
+          <StatCard
+            label="Ruin Rate"
+            value={`${(aggregate.ruinRate * 100).toFixed(1)}%`}
+            highlight={aggregate.ruinRate > 0.5}
+          />
+          <StatCard label="Median Final Bankroll" value={`${aggregate.median.toFixed(2)}`} />
+          <StatCard label="Mean Final Bankroll" value={`${aggregate.mean.toFixed(2)}`} />
+          <StatCard label="Worst Drawdown" value={`${aggregate.worstDrawdown.toFixed(2)}`} />
+        </section>
+      ) : null}
 
-      {/* ── Bankroll chart ── */}
-      <section className="w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-800 px-4 py-5">
-        <p className="text-xs uppercase tracking-widest text-gray-400 mb-4">
-          Bankroll over time
-        </p>
-        <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis
-              dataKey="spin"
-              tick={{ fill: '#9ca3af', fontSize: 11 }}
-              label={{ value: 'Spin', position: 'insideBottomRight', offset: -4, fill: '#6b7280', fontSize: 11 }}
-            />
-            <YAxis
-              tick={{ fill: '#9ca3af', fontSize: 11 }}
-              tickFormatter={(v: number) => `$${v}`}
-            />
-            <Tooltip
-              contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }}
-              labelStyle={{ color: '#d1d5db' }}
-              itemStyle={{ color: '#a5b4fc' }}
-              formatter={(v: number) => [`$${v.toFixed(2)}`, 'Bankroll']}
-              labelFormatter={(label: number) => `Spin ${label}`}
-            />
-            <Line
-              type="monotone"
-              dataKey="bankroll"
-              stroke="#6366f1"
-              strokeWidth={2}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </section>
+      {/* ── Bankroll chart (single-run only) ── */}
+      {committed.runs <= 1 && singleResult !== null && (
+        <section className="w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-800 px-4 py-5">
+          <p className="text-xs uppercase tracking-widest text-gray-400 mb-4">
+            Bankroll over time
+          </p>
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis
+                dataKey="spin"
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                label={{ value: 'Spin', position: 'insideBottomRight', offset: -4, fill: '#6b7280', fontSize: 11 }}
+              />
+              <YAxis
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tickFormatter={(v: number) => `${v}`}
+              />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }}
+                labelStyle={{ color: '#d1d5db' }}
+                itemStyle={{ color: '#a5b4fc' }}
+                formatter={(v: number) => [`${v.toFixed(2)}`, 'Bankroll']}
+                labelFormatter={(label: number) => `Spin ${label}`}
+              />
+              <Line
+                type="monotone"
+                dataKey="bankroll"
+                stroke="#6366f1"
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </section>
+      )}
     </main>
   );
 }
