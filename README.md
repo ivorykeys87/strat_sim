@@ -29,7 +29,7 @@ npm run build    # production build
 
 Switch to "Visual builder" mode to use the Blockly workspace. Connect blocks from the toolbox:
 
-- **Bets** — `Place bet` with a bet-kind dropdown (all 13 kinds) and an amount socket.
+- **Bets** — `Place bet` with a bet-kind dropdown (all 25 kinds) and an amount socket.
 - **Amounts** — `Base unit`, `Constant`, `Last stake × factor`, `Arithmetic`.
 - **Conditions** — `Last spin was color`, `Last spin number =`, `Last spin won on`, `Loss streak ≥ N`, `History length ≥ N`.
 - **Control** — `if/then`, `if/then/else`, `Compare`, `And`, `Or`, `Not`.
