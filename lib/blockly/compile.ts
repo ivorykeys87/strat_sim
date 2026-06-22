@@ -173,6 +173,29 @@ function lastWonOn(history: SpinResult[], kind: BetKind): boolean {
   return bet !== undefined && last.netPnl > 0;
 }
 
+/**
+ * Returns the total P&L for the named bet block on the last spin,
+ * or undefined if no such block was tracked on that spin.
+ */
+function blockPnlOnLastSpin(history: SpinResult[], name: string): number | undefined {
+  return lastSpin(history)?.blockPnls?.[name];
+}
+
+/**
+ * Returns the number of consecutive spins (counting back from the most recent)
+ * where the named bet block was present AND had a negative P&L.
+ * Stops at the first spin where the block is absent OR its P&L is >= 0.
+ */
+function blockLossStreak(history: SpinResult[], name: string): number {
+  let streak = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const pnl = history[i].blockPnls?.[name];
+    if (pnl === undefined || pnl >= 0) break;
+    streak++;
+  }
+  return streak;
+}
+
 // ---------------------------------------------------------------------------
 // Interpreter
 // ---------------------------------------------------------------------------
