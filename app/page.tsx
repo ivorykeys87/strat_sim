@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import {
   LineChart,
   Line,
@@ -12,15 +13,50 @@ import {
   CartesianGrid,
   ResponsiveContainer,
 } from 'recharts';
-import { simulate, monteCarlo, martingale, fibonacci, dalembert } from '@/lib/sim';
-import type { SimulateResult, MonteCarloResult, WheelType } from '@/lib/sim';
+import {
+  simulate,
+  monteCarlo,
+  martingale,
+  fibonacci,
+  dalembert,
+  flat,
+  composite,
+} from '@/lib/sim';
+import type { SimulateResult, MonteCarloResult, WheelType, BetKind } from '@/lib/sim';
+import { compileWorkspace } from '@/lib/blockly/compile';
+import type { ProgressionTarget } from '@/lib/sim';
 
-type StrategyName = 'martingale' | 'fibonacci' | 'dalembert';
-type EvenMoneyTarget = 'red' | 'black' | 'even' | 'odd' | 'low' | 'high';
+// ---------------------------------------------------------------------------
+// Dynamic Blockly component (no SSR)
+// ---------------------------------------------------------------------------
+
+const BlocklyBuilder = dynamic(() => import('@/components/BlocklyBuilder'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-[520px] rounded-xl border border-gray-700 bg-gray-900 flex items-center justify-center text-gray-500 text-sm">
+      Loading visual builder…
+    </div>
+  ),
+});
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type StrategyName = 'martingale' | 'fibonacci' | 'dalembert' | 'flat';
+type UIMode = 'form' | 'blockly';
+
+export type BetSpec = {
+  strategy: StrategyName;
+  kind: BetKind;
+  /** Required when kind === 'straight' (0–37, where 37 = 00) */
+  number?: number;
+  /** Per-bet base unit override; if absent, uses form-level baseUnit */
+  baseUnit?: number;
+};
 
 interface FormState {
-  strategy: StrategyName;
-  target: EvenMoneyTarget;
+  bets: BetSpec[];
   wheelType: WheelType;
   startingBankroll: number;
   baseUnit: number;
@@ -29,9 +65,16 @@ interface FormState {
   runs: number;
 }
 
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const LS_KEY = 'strat-sim:form:v2';
+
+const DEFAULT_BET: BetSpec = { strategy: 'martingale', kind: 'red' };
+
 const DEFAULT_FORM: FormState = {
-  strategy: 'martingale',
-  target: 'red',
+  bets: [{ ...DEFAULT_BET }],
   wheelType: 'european',
   startingBankroll: 1000,
   baseUnit: 5,
@@ -40,9 +83,50 @@ const DEFAULT_FORM: FormState = {
   runs: 1,
 };
 
-const LS_KEY = 'strat-sim:form';
+const ALL_BET_KINDS: [BetKind, string][] = [
+  ['red', 'Red'],
+  ['black', 'Black'],
+  ['even', 'Even'],
+  ['odd', 'Odd'],
+  ['low', 'Low (1–18)'],
+  ['high', 'High (19–36)'],
+  ['dozen1', '1st Dozen'],
+  ['dozen2', '2nd Dozen'],
+  ['dozen3', '3rd Dozen'],
+  ['column1', '1st Column'],
+  ['column2', '2nd Column'],
+  ['column3', '3rd Column'],
+  ['straight', 'Straight'],
+];
 
-/** Load FormState from localStorage, falling back to DEFAULT_FORM if missing/invalid. */
+const STRATEGY_LABELS: Record<StrategyName, string> = {
+  martingale: 'Martingale',
+  fibonacci: 'Fibonacci',
+  dalembert: "D'Alembert",
+  flat: 'Flat',
+};
+
+const WHEEL_LABELS: Record<WheelType, string> = {
+  european: 'European',
+  american: 'American',
+};
+
+// ---------------------------------------------------------------------------
+// localStorage helpers
+// ---------------------------------------------------------------------------
+
+function isValidBetSpec(x: unknown): x is BetSpec {
+  if (typeof x !== 'object' || x === null) return false;
+  const b = x as Record<string, unknown>;
+  if (!['martingale', 'fibonacci', 'dalembert', 'flat'].includes(b.strategy as string))
+    return false;
+  const validKinds: string[] = ALL_BET_KINDS.map(([k]) => k);
+  if (!validKinds.includes(b.kind as string)) return false;
+  if (b.kind === 'straight' && typeof b.number !== 'number') return false;
+  if (b.baseUnit !== undefined && typeof b.baseUnit !== 'number') return false;
+  return true;
+}
+
 function loadForm(): FormState {
   if (typeof window === 'undefined') return DEFAULT_FORM;
   try {
@@ -51,10 +135,10 @@ function loadForm(): FormState {
     const parsed = JSON.parse(raw) as unknown;
     if (typeof parsed !== 'object' || parsed === null) return DEFAULT_FORM;
     const p = parsed as Record<string, unknown>;
-    // Validate every key has the correct type.
     if (
-      typeof p.strategy !== 'string' ||
-      typeof p.target !== 'string' ||
+      !Array.isArray(p.bets) ||
+      p.bets.length === 0 ||
+      !p.bets.every(isValidBetSpec) ||
       typeof p.wheelType !== 'string' ||
       typeof p.startingBankroll !== 'number' ||
       typeof p.baseUnit !== 'number' ||
@@ -65,8 +149,7 @@ function loadForm(): FormState {
       return DEFAULT_FORM;
     }
     return {
-      strategy: p.strategy as StrategyName,
-      target: p.target as EvenMoneyTarget,
+      bets: p.bets as BetSpec[],
       wheelType: p.wheelType as WheelType,
       startingBankroll: p.startingBankroll,
       baseUnit: p.baseUnit,
@@ -79,21 +162,39 @@ function loadForm(): FormState {
   }
 }
 
-function buildStrategy(form: FormState) {
-  switch (form.strategy) {
-    case 'fibonacci':
-      return fibonacci({ target: form.target, baseUnit: form.baseUnit });
-    case 'dalembert':
-      return dalembert({ target: form.target, baseUnit: form.baseUnit });
-    case 'martingale':
-    default:
-      return martingale({ target: form.target, baseUnit: form.baseUnit });
+// ---------------------------------------------------------------------------
+// Strategy builder
+// ---------------------------------------------------------------------------
+
+function specToTarget(spec: BetSpec): ProgressionTarget {
+  if (spec.kind === 'straight') {
+    return { kind: 'straight', number: spec.number ?? 0 };
   }
+  return spec.kind as ProgressionTarget;
+}
+
+function buildStrategyFromForm(form: FormState) {
+  const inner = form.bets.map((spec) => {
+    const target = specToTarget(spec);
+    const bu = spec.baseUnit ?? form.baseUnit;
+    switch (spec.strategy) {
+      case 'fibonacci':
+        return fibonacci({ target, baseUnit: bu });
+      case 'dalembert':
+        return dalembert({ target, baseUnit: bu });
+      case 'flat':
+        return flat({ target, baseUnit: bu });
+      case 'martingale':
+      default:
+        return martingale({ target, baseUnit: bu });
+    }
+  });
+  return inner.length === 1 ? inner[0] : composite(inner);
 }
 
 function runSim(form: FormState): SimulateResult {
   return simulate({
-    strategy: buildStrategy(form),
+    strategy: buildStrategyFromForm(form),
     wheelType: form.wheelType,
     startingBankroll: form.startingBankroll,
     baseUnit: form.baseUnit,
@@ -102,29 +203,31 @@ function runSim(form: FormState): SimulateResult {
   });
 }
 
-const STRATEGY_LABELS: Record<StrategyName, string> = {
-  martingale: 'Martingale',
-  fibonacci: 'Fibonacci',
-  dalembert: "D'Alembert",
-};
-
-const WHEEL_LABELS: Record<WheelType, string> = {
-  european: 'European',
-  american: 'American',
-};
-
+// ---------------------------------------------------------------------------
 // Shared Tailwind classes
+// ---------------------------------------------------------------------------
+
 const inputClass =
   'rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500';
 const labelClass = 'block text-xs uppercase tracking-widest text-gray-400 mb-1';
+const selectClass = inputClass + ' w-full';
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function Home() {
+  const [mode, setMode] = useState<UIMode>('form');
   const [form, setForm] = useState<FormState>(() => loadForm());
   const [singleResult, setSingleResult] = useState<SimulateResult | null>(
     () => runSim(DEFAULT_FORM),
   );
   const [aggregate, setAggregate] = useState<MonteCarloResult | null>(null);
   const [committed, setCommitted] = useState<FormState>(DEFAULT_FORM);
+
+  // Blockly workspace JSON — kept in a ref to avoid triggering re-renders on
+  // every workspace change; only matters when Run is clicked.
+  const blocklyJsonRef = useRef<object | null>(null);
 
   // Persist form to localStorage whenever it changes.
   useEffect(() => {
@@ -137,12 +240,28 @@ export default function Home() {
 
   const handleRun = useCallback(() => {
     const runs = Math.max(1, form.runs);
+
+    let strategy;
+    if (mode === 'blockly' && blocklyJsonRef.current !== null) {
+      strategy = compileWorkspace(blocklyJsonRef.current as Parameters<typeof compileWorkspace>[0]);
+    } else {
+      strategy = buildStrategyFromForm(form);
+    }
+
     if (runs <= 1) {
-      setSingleResult(runSim(form));
+      const result = simulate({
+        strategy,
+        wheelType: form.wheelType,
+        startingBankroll: form.startingBankroll,
+        baseUnit: form.baseUnit,
+        maxSpins: form.maxSpins,
+        seed: form.seed,
+      });
+      setSingleResult(result);
       setAggregate(null);
     } else {
       const mc = monteCarlo({
-        strategy: buildStrategy(form),
+        strategy,
         wheelType: form.wheelType,
         startingBankroll: form.startingBankroll,
         baseUnit: form.baseUnit,
@@ -154,10 +273,29 @@ export default function Home() {
       setSingleResult(null);
     }
     setCommitted({ ...form, runs });
-  }, [form]);
+  }, [form, mode]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+
+  // ── Bet list helpers ──────────────────────────────────────────────────────
+
+  const addBet = () =>
+    setForm((prev) => ({ ...prev, bets: [...prev.bets, { ...DEFAULT_BET }] }));
+
+  const removeBet = (index: number) =>
+    setForm((prev) => ({
+      ...prev,
+      bets: prev.bets.length > 1 ? prev.bets.filter((_, i) => i !== index) : prev.bets,
+    }));
+
+  const updateBet = (index: number, patch: Partial<BetSpec>) =>
+    setForm((prev) => ({
+      ...prev,
+      bets: prev.bets.map((b, i) => (i === index ? { ...b, ...patch } : b)),
+    }));
+
+  // ── Chart data ────────────────────────────────────────────────────────────
 
   const chartData =
     singleResult
@@ -171,11 +309,26 @@ export default function Home() {
       }))
     : [];
 
+  // ── Summary line ──────────────────────────────────────────────────────────
+
   const summaryLine = (() => {
+    let stratDesc: string;
+    if (mode === 'blockly') {
+      stratDesc = 'Visual Strategy';
+    } else {
+      stratDesc = committed.bets
+        .map((b) => {
+          const sLabel = STRATEGY_LABELS[b.strategy];
+          const kLabel =
+            b.kind === 'straight'
+              ? `#${b.number ?? 0}`
+              : ALL_BET_KINDS.find(([k]) => k === b.kind)?.[1] ?? b.kind;
+          return `${sLabel}(${kLabel})`;
+        })
+        .join(' + ');
+    }
     const base = [
-      STRATEGY_LABELS[committed.strategy],
-      'on',
-      committed.target,
+      stratDesc,
       '·',
       WHEEL_LABELS[committed.wheelType],
       'wheel · seed',
@@ -189,131 +342,322 @@ export default function Home() {
     return base;
   })();
 
+  // ── Per-spin table data (last 50 spins) ───────────────────────────────────
+
+  const spinTableData =
+    singleResult && committed.runs <= 1
+      ? singleResult.spins.slice(-50).map((s, i, arr) => ({
+          spinIndex: singleResult.spins.length - arr.length + i + 1,
+          label: s.pocket.label ?? String(s.pocket.number),
+          color: s.pocket.color,
+          totalStake: s.bets.reduce((acc, b) => acc + b.amount, 0),
+          netPnl: s.netPnl,
+          bankrollAfter: s.bankrollAfter,
+        }))
+      : [];
+
   return (
     <main className="min-h-screen flex flex-col items-center gap-8 p-8">
       <h1 className="text-4xl font-bold tracking-tight mt-4">
         Roulette Strategy Tester
       </h1>
-      <p className="text-lg text-gray-300">{summaryLine}</p>
+      <p className="text-lg text-gray-300 text-center max-w-3xl">{summaryLine}</p>
 
-      {/* ── Controls ── */}
-      <section className="w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-800 px-6 py-5">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {/* Strategy */}
-          <div>
-            <label className={labelClass}>Strategy</label>
-            <select
-              className={inputClass + ' w-full'}
-              value={form.strategy}
-              onChange={(e) => set('strategy', e.target.value as StrategyName)}
-            >
-              <option value="martingale">Martingale</option>
-              <option value="fibonacci">Fibonacci</option>
-              <option value="dalembert">D&apos;Alembert</option>
-            </select>
-          </div>
+      {/* ── Mode toggle ── */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setMode('form')}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-400 ${
+            mode === 'form'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          }`}
+        >
+          Quick form
+        </button>
+        <button
+          onClick={() => setMode('blockly')}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-400 ${
+            mode === 'blockly'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          }`}
+        >
+          Visual builder
+        </button>
+      </div>
 
-          {/* Target */}
-          <div>
-            <label className={labelClass}>Target</label>
-            <select
-              className={inputClass + ' w-full'}
-              value={form.target}
-              onChange={(e) => set('target', e.target.value as EvenMoneyTarget)}
-            >
-              {(['red', 'black', 'even', 'odd', 'low', 'high'] as const).map(
-                (t) => (
-                  <option key={t} value={t}>
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
-                  </option>
-                ),
-              )}
-            </select>
-          </div>
+      {/* ── Quick form ── */}
+      {mode === 'form' && (
+        <section className="w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-800 px-6 py-5 flex flex-col gap-4">
 
-          {/* Wheel */}
-          <div>
-            <label className={labelClass}>Wheel</label>
-            <select
-              className={inputClass + ' w-full'}
-              value={form.wheelType}
-              onChange={(e) => set('wheelType', e.target.value as WheelType)}
-            >
-              <option value="european">European</option>
-              <option value="american">American</option>
-            </select>
-          </div>
+          {/* Bet list */}
+          <div className="flex flex-col gap-3">
+            <p className={labelClass}>Bets</p>
+            {form.bets.map((bet, idx) => (
+              <div
+                key={idx}
+                className="flex flex-wrap gap-2 items-end rounded-lg border border-gray-600 bg-gray-900 p-3"
+              >
+                {/* Strategy */}
+                <div className="flex-1 min-w-[120px]">
+                  <label className={labelClass}>Strategy</label>
+                  <select
+                    className={selectClass}
+                    value={bet.strategy}
+                    onChange={(e) =>
+                      updateBet(idx, { strategy: e.target.value as StrategyName })
+                    }
+                  >
+                    <option value="martingale">Martingale</option>
+                    <option value="fibonacci">Fibonacci</option>
+                    <option value="dalembert">D&apos;Alembert</option>
+                    <option value="flat">Flat</option>
+                  </select>
+                </div>
 
-          {/* Seed */}
-          <div>
-            <label className={labelClass}>Seed</label>
-            <input
-              type="number"
-              className={inputClass + ' w-full'}
-              value={form.seed}
-              onChange={(e) => set('seed', Number(e.target.value))}
-            />
-          </div>
+                {/* Bet kind */}
+                <div className="flex-1 min-w-[130px]">
+                  <label className={labelClass}>Bet kind</label>
+                  <select
+                    className={selectClass}
+                    value={bet.kind}
+                    onChange={(e) => {
+                      const kind = e.target.value as BetKind;
+                      updateBet(idx, {
+                        kind,
+                        number: kind === 'straight' ? (bet.number ?? 0) : undefined,
+                      });
+                    }}
+                  >
+                    {ALL_BET_KINDS.map(([k, label]) => (
+                      <option key={k} value={k}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-          {/* Starting bankroll */}
-          <div>
-            <label className={labelClass}>Starting Bankroll ($)</label>
-            <input
-              type="number"
-              min={1}
-              className={inputClass + ' w-full'}
-              value={form.startingBankroll}
-              onChange={(e) => set('startingBankroll', Number(e.target.value))}
-            />
-          </div>
+                {/* Straight number (only shown when kind=straight) */}
+                {bet.kind === 'straight' && (
+                  <div className="w-20">
+                    <label className={labelClass}>Number</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={37}
+                      className={inputClass + ' w-full'}
+                      value={bet.number ?? 0}
+                      onChange={(e) =>
+                        updateBet(idx, { number: Math.min(37, Math.max(0, Number(e.target.value))) })
+                      }
+                    />
+                  </div>
+                )}
 
-          {/* Base unit */}
-          <div>
-            <label className={labelClass}>Base Unit ($)</label>
-            <input
-              type="number"
-              min={1}
-              className={inputClass + ' w-full'}
-              value={form.baseUnit}
-              onChange={(e) => set('baseUnit', Number(e.target.value))}
-            />
-          </div>
+                {/* Per-bet base unit override */}
+                <div className="w-24">
+                  <label className={labelClass}>Unit ($)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder={String(form.baseUnit)}
+                    className={inputClass + ' w-full'}
+                    value={bet.baseUnit ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? undefined : Number(e.target.value);
+                      updateBet(idx, { baseUnit: val });
+                    }}
+                  />
+                </div>
 
-          {/* Max spins */}
-          <div>
-            <label className={labelClass}>Max Spins</label>
-            <input
-              type="number"
-              min={1}
-              className={inputClass + ' w-full'}
-              value={form.maxSpins}
-              onChange={(e) => set('maxSpins', Number(e.target.value))}
-            />
-          </div>
+                {/* Remove button */}
+                <button
+                  onClick={() => removeBet(idx)}
+                  disabled={form.bets.length === 1}
+                  className="px-3 py-2 rounded-lg bg-gray-700 text-gray-300 hover:bg-red-700 hover:text-white text-sm disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="Remove this bet"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
 
-          {/* Runs */}
-          <div>
-            <label className={labelClass}>Runs</label>
-            <input
-              type="number"
-              min={1}
-              className={inputClass + ' w-full'}
-              value={form.runs}
-              onChange={(e) => set('runs', Math.max(1, Number(e.target.value)))}
-            />
-          </div>
-
-          {/* Run button — spans remaining space, vertically aligned with inputs */}
-          <div className="flex items-end sm:col-span-2">
             <button
-              onClick={handleRun}
-              className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors"
+              onClick={addBet}
+              className="self-start rounded-lg border border-dashed border-gray-500 px-4 py-2 text-sm text-gray-400 hover:border-indigo-400 hover:text-indigo-400 transition-colors"
             >
-              Run simulation
+              + Add bet
             </button>
           </div>
-        </div>
-      </section>
+
+          {/* Global options */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 pt-2 border-t border-gray-700">
+            {/* Wheel */}
+            <div>
+              <label className={labelClass}>Wheel</label>
+              <select
+                className={selectClass}
+                value={form.wheelType}
+                onChange={(e) => set('wheelType', e.target.value as WheelType)}
+              >
+                <option value="european">European</option>
+                <option value="american">American</option>
+              </select>
+            </div>
+
+            {/* Seed */}
+            <div>
+              <label className={labelClass}>Seed</label>
+              <input
+                type="number"
+                className={inputClass + ' w-full'}
+                value={form.seed}
+                onChange={(e) => set('seed', Number(e.target.value))}
+              />
+            </div>
+
+            {/* Starting bankroll */}
+            <div>
+              <label className={labelClass}>Bankroll ($)</label>
+              <input
+                type="number"
+                min={1}
+                className={inputClass + ' w-full'}
+                value={form.startingBankroll}
+                onChange={(e) => set('startingBankroll', Number(e.target.value))}
+              />
+            </div>
+
+            {/* Base unit */}
+            <div>
+              <label className={labelClass}>Base Unit ($)</label>
+              <input
+                type="number"
+                min={1}
+                className={inputClass + ' w-full'}
+                value={form.baseUnit}
+                onChange={(e) => set('baseUnit', Number(e.target.value))}
+              />
+            </div>
+
+            {/* Max spins */}
+            <div>
+              <label className={labelClass}>Max Spins</label>
+              <input
+                type="number"
+                min={1}
+                className={inputClass + ' w-full'}
+                value={form.maxSpins}
+                onChange={(e) => set('maxSpins', Number(e.target.value))}
+              />
+            </div>
+
+            {/* Runs */}
+            <div>
+              <label className={labelClass}>Runs</label>
+              <input
+                type="number"
+                min={1}
+                className={inputClass + ' w-full'}
+                value={form.runs}
+                onChange={(e) => set('runs', Math.max(1, Number(e.target.value)))}
+              />
+            </div>
+
+            {/* Run button */}
+            <div className="flex items-end sm:col-span-2">
+              <button
+                onClick={handleRun}
+                className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors"
+              >
+                Run simulation
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── Visual builder ── */}
+      {mode === 'blockly' && (
+        <section className="w-full max-w-5xl flex flex-col gap-4">
+          <BlocklyBuilder onChange={(json) => { blocklyJsonRef.current = json; }} />
+
+          {/* Global options for visual builder (same sim params) */}
+          <div className="rounded-xl border border-gray-700 bg-gray-800 px-6 py-5">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div>
+                <label className={labelClass}>Wheel</label>
+                <select
+                  className={selectClass}
+                  value={form.wheelType}
+                  onChange={(e) => set('wheelType', e.target.value as WheelType)}
+                >
+                  <option value="european">European</option>
+                  <option value="american">American</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Seed</label>
+                <input
+                  type="number"
+                  className={inputClass + ' w-full'}
+                  value={form.seed}
+                  onChange={(e) => set('seed', Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Bankroll ($)</label>
+                <input
+                  type="number"
+                  min={1}
+                  className={inputClass + ' w-full'}
+                  value={form.startingBankroll}
+                  onChange={(e) => set('startingBankroll', Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Base Unit ($)</label>
+                <input
+                  type="number"
+                  min={1}
+                  className={inputClass + ' w-full'}
+                  value={form.baseUnit}
+                  onChange={(e) => set('baseUnit', Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Max Spins</label>
+                <input
+                  type="number"
+                  min={1}
+                  className={inputClass + ' w-full'}
+                  value={form.maxSpins}
+                  onChange={(e) => set('maxSpins', Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Runs</label>
+                <input
+                  type="number"
+                  min={1}
+                  className={inputClass + ' w-full'}
+                  value={form.runs}
+                  onChange={(e) => set('runs', Math.max(1, Number(e.target.value)))}
+                />
+              </div>
+              <div className="flex items-end sm:col-span-2">
+                <button
+                  onClick={handleRun}
+                  className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors"
+                >
+                  Run simulation
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── Summary stats ── */}
       {committed.runs <= 1 && singleResult !== null ? (
@@ -380,6 +724,62 @@ export default function Home() {
         </section>
       )}
 
+      {/* ── Per-spin results table (single-run, last 50 spins) ── */}
+      {committed.runs <= 1 && singleResult !== null && spinTableData.length > 0 && (
+        <section className="w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-800 px-4 py-5">
+          <p className="text-xs uppercase tracking-widest text-gray-400 mb-3">
+            Spin history (last {spinTableData.length} spins)
+          </p>
+          <div className="overflow-x-auto max-h-72 overflow-y-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead className="sticky top-0 bg-gray-800">
+                <tr className="text-xs uppercase tracking-widest text-gray-400 border-b border-gray-700">
+                  <th className="py-2 pr-3 text-left">Spin</th>
+                  <th className="py-2 pr-3 text-left">Pocket</th>
+                  <th className="py-2 pr-3 text-left">Color</th>
+                  <th className="py-2 pr-3 text-right">Stake</th>
+                  <th className="py-2 pr-3 text-right">P&amp;L</th>
+                  <th className="py-2 text-right">Bankroll</th>
+                </tr>
+              </thead>
+              <tbody>
+                {spinTableData.map((row) => (
+                  <tr
+                    key={row.spinIndex}
+                    className="border-b border-gray-700/50 hover:bg-gray-700/30 transition-colors"
+                  >
+                    <td className="py-1.5 pr-3 text-gray-400 font-mono">{row.spinIndex}</td>
+                    <td className="py-1.5 pr-3 font-mono font-semibold text-white">
+                      {row.label}
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      <span className="inline-flex items-center gap-1.5">
+                        <ColorDot color={row.color} />
+                        <span className="text-gray-300 capitalize">{row.color}</span>
+                      </span>
+                    </td>
+                    <td className="py-1.5 pr-3 text-right font-mono text-gray-300">
+                      {row.totalStake.toFixed(2)}
+                    </td>
+                    <td
+                      className={`py-1.5 pr-3 text-right font-mono font-semibold ${
+                        row.netPnl >= 0 ? 'text-green-400' : 'text-red-400'
+                      }`}
+                    >
+                      {row.netPnl >= 0 ? '+' : ''}
+                      {row.netPnl.toFixed(2)}
+                    </td>
+                    <td className="py-1.5 text-right font-mono text-white">
+                      {row.bankrollAfter.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {/* ── Final bankroll distribution histogram (multi-run only) ── */}
       {aggregate !== null && (
         <section className="w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-800 px-4 py-5">
@@ -418,6 +818,10 @@ export default function Home() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
 function StatCard({
   label,
   value,
@@ -437,4 +841,14 @@ function StatCard({
       </p>
     </div>
   );
+}
+
+function ColorDot({ color }: { color: 'red' | 'black' | 'green' }) {
+  const bg =
+    color === 'red'
+      ? 'bg-red-500'
+      : color === 'black'
+      ? 'bg-gray-900 border border-gray-500'
+      : 'bg-green-500';
+  return <span className={`inline-block w-3 h-3 rounded-full ${bg}`} />;
 }
