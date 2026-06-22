@@ -65,6 +65,7 @@ export const MATH_OP_OPTIONS: [string, string][] = [
 export type BlockType =
   | 'strategy_root'
   | 'place_bet'
+  | 'bet_block'
   | 'amount_base_unit'
   | 'amount_constant'
   | 'amount_last_stake_times'
@@ -74,6 +75,9 @@ export type BlockType =
   | 'condition_last_won_on'
   | 'condition_loss_streak'
   | 'condition_history_length'
+  | 'condition_block_won'
+  | 'condition_block_lost'
+  | 'condition_block_loss_streak'
   | 'control_if_then'
   | 'control_if_then_else'
   | 'control_compare'
