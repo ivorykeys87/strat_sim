@@ -282,7 +282,16 @@ export default function Home() {
         runs,
       });
       setAggregate(mc);
-      setSingleResult(null);
+      // Retain the first run so the spin-history table has data to display.
+      const firstRun = simulate({
+        strategy: buildStrategyFromForm(form),
+        wheelType: form.wheelType,
+        startingBankroll: form.startingBankroll,
+        baseUnit: form.baseUnit,
+        maxSpins: form.maxSpins,
+        seed: form.seed,
+      });
+      setSingleResult(firstRun);
     }
     setCommitted({ ...form, runs });
   }, [form, mode]);
