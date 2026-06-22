@@ -6,3 +6,36 @@ body {
   background-color: #111827; /* neutral dark — gray-900 */
   color: #f9fafb;            /* gray-50 */
 }
+
+/* ── Blockly flyout artifact fix ────────────────────────────────────────────
+ * When a block is dragged out of the toolbox flyout the flyout collapses but
+ * its SVG background and scrollbar track can retain a residual width, leaving
+ * a thin grey vertical strip against the dark page background.
+ * Force the flyout and all its sub-elements fully invisible when closed.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* Flyout SVG container when Blockly marks it display:none */
+.blocklyFlyout[style*="display: none"],
+.blocklyFlyout[style*="display:none"] {
+  display: none !important;
+  width: 0 !important;
+}
+
+/* Background rect inside the flyout — collapses with the parent */
+.blocklyFlyout[style*="display: none"] .blocklyFlyoutBackground,
+.blocklyFlyout[style*="display:none"] .blocklyFlyoutBackground {
+  display: none !important;
+  width: 0 !important;
+}
+
+/* Scrollbar track that persists after flyout close */
+.blocklyFlyoutScrollbar {
+  display: none !important;
+  width: 0 !important;
+}
+
+/* Ensure no grey bleed-through from Blockly's default light SVG backgrounds
+ * when rendered on top of our gray-900 body.                                */
+.blocklyMainBackground {
+  fill: transparent !important;
+}

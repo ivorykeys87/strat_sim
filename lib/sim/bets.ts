@@ -13,7 +13,19 @@ export type BetKind =
   | 'dozen3'
   | 'column1'
   | 'column2'
-  | 'column3';
+  | 'column3'
+  | 'street1'
+  | 'street2'
+  | 'street3'
+  | 'street4'
+  | 'street5'
+  | 'street6'
+  | 'street7'
+  | 'street8'
+  | 'street9'
+  | 'street10'
+  | 'street11'
+  | 'street12';
 
 export type Bet = {
   kind: BetKind;
@@ -40,6 +52,18 @@ export type ProgressionTarget =
   | 'column1'
   | 'column2'
   | 'column3'
+  | 'street1'
+  | 'street2'
+  | 'street3'
+  | 'street4'
+  | 'street5'
+  | 'street6'
+  | 'street7'
+  | 'street8'
+  | 'street9'
+  | 'street10'
+  | 'street11'
+  | 'street12'
   | { kind: 'straight'; number: number };
 
 /** Normalised kind string extracted from a ProgressionTarget. */
@@ -81,6 +105,19 @@ export function payoutMultiplier(kind: BetKind): number {
     case 'column2':
     case 'column3':
       return 2;
+    case 'street1':
+    case 'street2':
+    case 'street3':
+    case 'street4':
+    case 'street5':
+    case 'street6':
+    case 'street7':
+    case 'street8':
+    case 'street9':
+    case 'street10':
+    case 'street11':
+    case 'street12':
+      return 11;
     case 'red':
     case 'black':
     case 'even':
@@ -161,6 +198,19 @@ export function resolveBet(bet: Bet, pocket: Pocket): number {
       // Numbers 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36
       win = n >= 1 && n <= 36 && n % 3 === 0;
       break;
+
+    case 'street1':  win = n >= 1  && n <= 3;  break;
+    case 'street2':  win = n >= 4  && n <= 6;  break;
+    case 'street3':  win = n >= 7  && n <= 9;  break;
+    case 'street4':  win = n >= 10 && n <= 12; break;
+    case 'street5':  win = n >= 13 && n <= 15; break;
+    case 'street6':  win = n >= 16 && n <= 18; break;
+    case 'street7':  win = n >= 19 && n <= 21; break;
+    case 'street8':  win = n >= 22 && n <= 24; break;
+    case 'street9':  win = n >= 25 && n <= 27; break;
+    case 'street10': win = n >= 28 && n <= 30; break;
+    case 'street11': win = n >= 31 && n <= 33; break;
+    case 'street12': win = n >= 34 && n <= 36; break;
   }
 
   return win ? amount * payoutMultiplier(kind) : -amount;
