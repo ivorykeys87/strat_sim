@@ -205,6 +205,8 @@ interface EvalCtx {
   bankroll: number;
   baseUnit: number;
   bets: Bet[];
+  /** Set while executing the body of a bet_block; undefined outside any block. */
+  currentBlockId?: string;
 }
 
 function evalAmount(node: BlockNode | undefined, ctx: EvalCtx): number {
