@@ -116,3 +116,67 @@ describe('simulate – multiple bets per spin', () => {
     }
   });
 });
+
+describe('simulate – blockPnls accumulation', () => {
+  it('SpinResult.blockPnls[x] equals the sum of resolveBet for bets with blockId x', () => {
+    // Strategy: one red bet + one black bet, both tagged blockId 'x'.
+    // On any non-green spin, one wins and one loses by equal magnitude → net 0.
+    // On green, both lose → net = -amount * 2.
+    // Either way, blockPnls.x should equal the arithmetic sum of the two resolved bets.
+    const betAmount = 10;
+    const fixedStrategy: Strategy = {
+      name: 'test-block-pnl',
+      nextBets: () => [
+        { kind: 'red', amount: betAmount, blockId: 'x' },
+        { kind: 'black', amount: betAmount, blockId: 'x' },
+      ],
+    };
+
+    const result = simulate({
+      strategy: fixedStrategy,
+      wheelType: 'european',
+      startingBankroll: 1000,
+      baseUnit: 10,
+      maxSpins: 1,
+      seed: 1,
+    });
+
+    expect(result.spins).toHaveLength(1);
+    const spin = result.spins[0];
+
+    // blockPnls must be defined and have key 'x'
+    expect(spin.blockPnls).toBeDefined();
+    expect(typeof spin.blockPnls!['x']).toBe('number');
+
+    // Manually compute expected block P&L
+    const expectedBlockPnl =
+      resolveBet({ kind: 'red', amount: betAmount }, spin.pocket) +
+      resolveBet({ kind: 'black', amount: betAmount }, spin.pocket);
+
+    expect(spin.blockPnls!['x']).toBe(expectedBlockPnl);
+
+    // netPnl must also match the same sum (only two bets, both in block x)
+    expect(spin.netPnl).toBe(expectedBlockPnl);
+  });
+
+  it('bets without blockId do not contribute to blockPnls', () => {
+    // Strategy returns one untagged bet — blockPnls should be absent.
+    const fixedStrategy: Strategy = {
+      name: 'test-no-block',
+      nextBets: () => [{ kind: 'red', amount: 5 }],
+    };
+
+    const result = simulate({
+      strategy: fixedStrategy,
+      wheelType: 'european',
+      startingBankroll: 1000,
+      baseUnit: 5,
+      maxSpins: 1,
+      seed: 1,
+    });
+
+    expect(result.spins).toHaveLength(1);
+    // No bets have a blockId, so blockPnls should be undefined
+    expect(result.spins[0].blockPnls).toBeUndefined();
+  });
+});
