@@ -52,6 +52,18 @@ export type ProgressionTarget =
   | 'column1'
   | 'column2'
   | 'column3'
+  | 'street1'
+  | 'street2'
+  | 'street3'
+  | 'street4'
+  | 'street5'
+  | 'street6'
+  | 'street7'
+  | 'street8'
+  | 'street9'
+  | 'street10'
+  | 'street11'
+  | 'street12'
   | { kind: 'straight'; number: number };
 
 /** Normalised kind string extracted from a ProgressionTarget. */
