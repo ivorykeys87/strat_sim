@@ -7,7 +7,7 @@
  * import (avoiding SSR issues).
  */
 
-/** All 13 BetKind values paired with human-readable labels. */
+/** All 25 BetKind values paired with human-readable labels. */
 export const BET_KIND_OPTIONS: [string, string][] = [
   ['Red', 'red'],
   ['Black', 'black'],
@@ -21,6 +21,18 @@ export const BET_KIND_OPTIONS: [string, string][] = [
   ['1st Column', 'column1'],
   ['2nd Column', 'column2'],
   ['3rd Column', 'column3'],
+  ['1st Street (1–3)', 'street1'],
+  ['2nd Street (4–6)', 'street2'],
+  ['3rd Street (7–9)', 'street3'],
+  ['4th Street (10–12)', 'street4'],
+  ['5th Street (13–15)', 'street5'],
+  ['6th Street (16–18)', 'street6'],
+  ['7th Street (19–21)', 'street7'],
+  ['8th Street (22–24)', 'street8'],
+  ['9th Street (25–27)', 'street9'],
+  ['10th Street (28–30)', 'street10'],
+  ['11th Street (31–33)', 'street11'],
+  ['12th Street (34–36)', 'street12'],
   ['Straight', 'straight'],
 ];
 
