@@ -316,6 +316,26 @@ function evalCondition(node: BlockNode | undefined, ctx: EvalCtx): boolean {
       return !evalCondition(node.inputs?.['CONDITION']?.block, ctx);
     }
 
+    case 'condition_block_won': {
+      const name = (node.fields?.['NAME'] as string | undefined) ?? 'main';
+      const pnl = blockPnlOnLastSpin(ctx.history, name);
+      return pnl !== undefined && pnl > 0;
+    }
+
+    case 'condition_block_lost': {
+      const name = (node.fields?.['NAME'] as string | undefined) ?? 'main';
+      const pnl = blockPnlOnLastSpin(ctx.history, name);
+      return pnl !== undefined && pnl < 0;
+    }
+
+    case 'condition_block_loss_streak': {
+      const name = (node.fields?.['NAME'] as string | undefined) ?? 'main';
+      const n = typeof node.fields?.['N'] === 'number'
+        ? (node.fields['N'] as number)
+        : Number(node.fields?.['N'] ?? 1);
+      return blockLossStreak(ctx.history, name) >= n;
+    }
+
     default:
       return false;
   }
