@@ -13,7 +13,19 @@ export type BetKind =
   | 'dozen3'
   | 'column1'
   | 'column2'
-  | 'column3';
+  | 'column3'
+  | 'street1'
+  | 'street2'
+  | 'street3'
+  | 'street4'
+  | 'street5'
+  | 'street6'
+  | 'street7'
+  | 'street8'
+  | 'street9'
+  | 'street10'
+  | 'street11'
+  | 'street12';
 
 export type Bet = {
   kind: BetKind;
