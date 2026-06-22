@@ -284,7 +284,7 @@ export default function Home() {
       setAggregate(mc);
       // Retain the first run so the spin-history table has data to display.
       const firstRun = simulate({
-        strategy: buildStrategyFromForm(form),
+        strategy,
         wheelType: form.wheelType,
         startingBankroll: form.startingBankroll,
         baseUnit: form.baseUnit,
