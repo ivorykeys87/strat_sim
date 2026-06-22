@@ -22,7 +22,7 @@ import {
   flat,
   composite,
 } from '@/lib/sim';
-import type { SimulateResult, MonteCarloResult, WheelType, BetKind } from '@/lib/sim';
+import type { SimulateResult, MonteCarloResult, WheelType, BetKind, Bet } from '@/lib/sim';
 import { compileWorkspace } from '@/lib/blockly/compile';
 import type { ProgressionTarget } from '@/lib/sim';
 
